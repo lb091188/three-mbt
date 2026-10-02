@@ -1,0 +1,235 @@
+// WebGPURenderer:建在 wgpu_mbt 之上的帧渲染器。
+// surface 由宿主窗口的原生句柄创建(X11 路径已真机趟通)。
+
+///| 单个 mesh 的 GPU 资源(顶点/索引/uniform/绑定组)
+struct GpuMesh {
+  vbuf : @wgpu_mbt.Buffer
+  ibuf : @wgpu_mbt.Buffer
+  ubuf : @wgpu_mbt.Buffer
+  bind_group : @wgpu_mbt.BindGroup
+  index_count : UInt
+}
+
+///| WebGPU 渲染器
+pub(all) struct WebGPURenderer {
+  instance : @wgpu_mbt.Instance
+  adapter : @wgpu_mbt.Adapter
+  device : @wgpu_mbt.Device
+  queue : @wgpu_mbt.Queue
+  surface : @wgpu_mbt.Surface
+  format : @wgpu_mbt.TextureFormat
+  pipeline_basic : @wgpu_mbt.RenderPipeline
+  bgl : @wgpu_mbt.BindGroupLayout
+  mut width : UInt
+  mut height : UInt
+  mut depth_view : @wgpu_mbt.TextureView?
+  /// 节点 id → GPU 资源缓存(geometry 变更后调 invalidate_mesh)
+  mut mesh_cache : @hashmap.HashMap[UInt64, GpuMesh]
+}
+
+///| 从 X11 原生句柄创建渲染器(display/xid 由宿主窗口层换算)
+pub fn WebGPURenderer::from_xlib(
+  display : UInt64,
+  xid : UInt64,
+  width : UInt,
+  height : UInt,
+) -> WebGPURenderer raise Error {
+  @wgpu_mbt.set_uncaptured_error_stderr_enabled(true)
+  @wgpu_mbt.set_log_callback_stderr_enabled(true)
+  let instance = @wgpu_mbt.Instance::create()
+  let surface = instance.create_surface_xlib(
+    @c.opaque_ptr_from_u64(display),
+    xid,
+  )
+  let adapter = instance.request_adapter_sync_options_surface_u32(surface)
+  let device = adapter.request_device_sync(instance)
+  let queue = device.queue()
+  let format = surface.configure_default(
+    adapter,
+    device,
+    width,
+    height,
+    @wgpu_mbt.TextureUsage::from_u64(
+      @wgpu_mbt.TEXTURE_USAGE_RENDER_ATTACHMENT,
+    ),
+  )
+  // uniform BGL:便捷版固定 Fragment 可见性,顶点阶段用 mvp 必须
+  // VERTEX|FRAGMENT,走通用 BindGroupLayoutBuilder
+  let bglb = @wgpu_mbt.BindGroupLayoutBuilder::new(max_entries=1UL)
+  let _bgl_ok = bglb.add_buffer(
+    0U,
+    @wgpu_mbt.ShaderStage::from_u64(
+      @wgpu_mbt.SHADER_STAGE_VERTEX |
+      @wgpu_mbt.SHADER_STAGE_FRAGMENT,
+    ),
+    @wgpu_mbt.BUFFER_BINDING_TYPE_UNIFORM,
+  )
+  let bgl = bglb.finish(device)
+  let pipeline = create_basic_pipeline(device, format, bgl)
+  let r : WebGPURenderer = {
+    instance,
+    adapter,
+    device,
+    queue,
+    surface,
+    format,
+    pipeline_basic: pipeline,
+    bgl,
+    width,
+    height,
+    depth_view: None,
+    mesh_cache: @hashmap.HashMap([], capacity=64),
+  }
+  r.rebuild_depth()
+  r
+}
+
+///| 重建深度附着(resize 后调)
+fn WebGPURenderer::rebuild_depth(self : WebGPURenderer) -> Unit {
+  let tex = self.device.create_texture_depth24plus_2d(
+    self.width,
+    self.height,
+  )
+  self.depth_view = Some(tex.create_view())
+}
+
+///| 尺寸变化:重配 surface 与深度附着(格式沿用)
+pub fn WebGPURenderer::resize(
+  self : WebGPURenderer,
+  width : UInt,
+  height : UInt,
+) -> Unit {
+  if width == 0U || height == 0U {
+    return
+  }
+  if width == self.width && height == self.height {
+    return
+  }
+  self.width = width
+  self.height = height
+  let _ = self.surface.configure_default(
+    self.adapter,
+    self.device,
+    width,
+    height,
+    @wgpu_mbt.TextureUsage::from_u64(
+      @wgpu_mbt.TEXTURE_USAGE_RENDER_ATTACHMENT,
+    ),
+  )
+  self.rebuild_depth()
+}
+
+///| geometry 变更后清缓存(节点 id)
+pub fn WebGPURenderer::invalidate_mesh(
+  self : WebGPURenderer,
+  node_id : UInt64,
+) -> Unit {
+  ignore(self.mesh_cache.remove(node_id))
+}
+
+///| 取或建 mesh 的 GPU 资源
+fn WebGPURenderer::ensure_gpu_mesh(
+  self : WebGPURenderer,
+  node : @core.Object3D,
+) -> GpuMesh raise Error {
+  match self.mesh_cache.get(node.id) {
+    Some(g) => return g
+    None => ()
+  }
+  let m = match node.mesh {
+    Some(m) => m
+    None => raise Failure("node has no mesh")
+  }
+  let positions = f32_array_bytes(m.geometry.positions)
+  let indices = u32_array_bytes(m.geometry.indices)
+  let vbuf = self.device.create_buffer_init(
+    usage=@wgpu_mbt.BufferUsage::from_u64(@wgpu_mbt.BUFFER_USAGE_VERTEX),
+    positions,
+  )
+  let ibuf = self.device.create_buffer_init(
+    usage=@wgpu_mbt.BufferUsage::from_u64(@wgpu_mbt.BUFFER_USAGE_INDEX),
+    indices,
+  )
+  let ubuf = self.device.create_buffer(
+    size=uniform_size,
+    usage=@wgpu_mbt.BufferUsage::from_u64(
+      @wgpu_mbt.BUFFER_USAGE_UNIFORM |
+      @wgpu_mbt.BUFFER_USAGE_COPY_DST,
+    ),
+  )
+  let bgb = @wgpu_mbt.BindGroupBuilder::new(max_entries=1UL)
+  let _ok = bgb.add_buffer(0U, ubuf)
+  let bind_group = bgb.finish(self.device, self.bgl)
+  let g : GpuMesh = {
+    vbuf,
+    ibuf,
+    ubuf,
+    bind_group,
+    index_count: Int::reinterpret_as_uint(m.geometry.index_count()),
+  }
+  self.mesh_cache.set(node.id, g)
+  g
+}
+
+///| 渲染一帧:clear 背景与深度,绘制场景中全部可见 mesh(Basic 管线)
+pub fn WebGPURenderer::render(
+  self : WebGPURenderer,
+  scene : @core.Scene,
+  camera : @core.PerspectiveCamera,
+) -> Unit raise Error {
+  let depth_view = match self.depth_view {
+    Some(v) => v
+    None => raise Failure("no depth view")
+  }
+  scene.update_matrix_world()
+  let vp = camera.projection_matrix.multiply(camera.view_matrix())
+  // 收集可见 mesh 节点
+  let nodes : Array[@core.Object3D] = []
+  scene.root.traverse(fn(o) {
+    if o.visible && o.mesh is Some(_) {
+      nodes.push(o)
+    }
+    true
+  })
+  let st = self.surface.get_current_texture()
+  if !st.is_success() {
+    st.release()
+    return
+  }
+  let tex = st.take_texture()
+  let color_view = tex.create_view()
+  let encoder = self.device.create_command_encoder()
+  let bg = match scene.background {
+    Some(c) => c
+    None => @math3d.Color::new(0.1, 0.12, 0.16)
+  }
+  let pass = encoder.begin_render_pass_color_depth_u32(
+    color_view,
+    depth_view,
+    color_load_op_u32=@wgpu_mbt.LOAD_OP_CLEAR,
+    color_store_op_u32=@wgpu_mbt.STORE_OP_STORE,
+    color_clear_r_f32=Float::from_double(bg.r),
+    color_clear_g_f32=Float::from_double(bg.g),
+    color_clear_b_f32=Float::from_double(bg.b),
+    color_clear_a_f32=1.0,
+    depth_load_op_u32=@wgpu_mbt.LOAD_OP_CLEAR,
+    depth_store_op_u32=@wgpu_mbt.STORE_OP_STORE,
+    depth_clear_value_f32=1.0,
+  )
+  for node in nodes {
+    let g = self.ensure_gpu_mesh(node)
+    let m = node.mesh.unwrap()
+    // uniform:mvp + color(rgba)
+    let ub = uniform_bytes(vp.multiply(node.matrix_world), m.material.color)
+    self.queue.write_buffer(g.ubuf, 0UL, ub)
+    pass.set_pipeline(self.pipeline_basic)
+    pass.set_bind_group0(g.bind_group)
+    pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
+    pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
+    pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)
+  }
+  pass.end()
+  self.queue.submit_one(encoder.finish())
+  let _ = self.surface.present()
+}
+

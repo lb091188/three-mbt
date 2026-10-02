@@ -20,6 +20,8 @@ pub(all) struct Object3D {
   mut matrix_world : @math3d.Matrix4
   mut visible : Bool
   mut name : String
+  /// 渲染组件(几何+材质;None=纯组节点)
+  mut mesh : Mesh?
   /// 子节点(数组内容可变;父子互斥由 add/remove 维护)
   children : Array[Object3D]
   mut parent : Object3D?
@@ -37,6 +39,7 @@ pub fn Object3D::new() -> Object3D {
     matrix_world: @math3d.Matrix4::identity(),
     visible: true,
     name: "",
+    mesh: None,
     children: [],
     parent: None,
   }

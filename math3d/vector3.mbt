@@ -25,10 +25,12 @@ pub fn Vector3::unit_x() -> Vector3 {
   { x: 1.0, y: 0.0, z: 0.0 }
 }
 
+///| Y 轴单位基向量
 pub fn Vector3::unit_y() -> Vector3 {
   { x: 0.0, y: 1.0, z: 0.0 }
 }
 
+///| Z 轴单位基向量
 pub fn Vector3::unit_z() -> Vector3 {
   { x: 0.0, y: 0.0, z: 1.0 }
 }

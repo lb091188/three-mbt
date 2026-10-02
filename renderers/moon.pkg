@@ -1,0 +1,7 @@
+import {
+  "NoahLiu/three-mbt/math3d",
+  "NoahLiu/three-mbt/core",
+  "Milky2018/wgpu_mbt",
+  "Milky2018/wgpu_mbt/c",
+  "moonbitlang/core/hashmap",
+}

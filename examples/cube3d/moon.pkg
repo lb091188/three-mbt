@@ -1,0 +1,9 @@
+import {
+  "NoahLiu/moonbit-libyue/yue",
+  "NoahLiu/three-mbt/math3d",
+  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-mbt/renderers",
+  "Milky2018/wgpu_mbt",
+}
+
+options("is-main": true)

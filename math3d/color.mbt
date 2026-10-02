@@ -29,10 +29,12 @@ pub fn Color::red() -> Color {
   { r: 1.0, g: 0.0, b: 0.0 }
 }
 
+///| 绿色便捷色
 pub fn Color::green() -> Color {
   { r: 0.0, g: 1.0, b: 0.0 }
 }
 
+///| 蓝色便捷色
 pub fn Color::blue() -> Color {
   { r: 0.0, g: 0.0, b: 1.0 }
 }
@@ -106,7 +108,7 @@ pub fn Color::to_hex(self : Color) -> String {
   let r = byte(self.r)
   let g = byte(self.g)
   let b = byte(self.b)
-  let hex = [
+  let hex : Array[String] = [
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d",
     "e", "f",
   ]
