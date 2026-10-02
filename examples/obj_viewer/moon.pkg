@@ -1,0 +1,11 @@
+import {
+  "NoahLiu/moonbit-libyue/yue",
+  "NoahLiu/three-mbt/math3d",
+  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-mbt/renderers",
+  "NoahLiu/three-mbt/loaders",
+  "NoahLiu/three-mbt/controls",
+  "Milky2018/wgpu_mbt",
+}
+
+pkgtype(kind: "executable")
