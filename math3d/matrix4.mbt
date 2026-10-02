@@ -337,3 +337,26 @@ pub fn Matrix4::max_scale_on_axis(self : Matrix4) -> Double {
   let smax = if sx > sy { sx } else { sy }
   (if smax > sz { smax } else { sz }).sqrt()
 }
+
+///| 从旋转矩阵提取四元数(Shepperd 方法,three.js setFromRotationMatrix 同源)
+pub fn Matrix4::to_quaternion(self : Matrix4) -> Quaternion {
+  let m = self.e
+  let trace = m[0] + m[5] + m[10]
+  fn mk(w : Double, x : Double, y : Double, z : Double) -> Quaternion {
+    let q : Quaternion = { x, y, z, w, }
+    q.normalize()
+  }
+  if trace > 0.0 {
+    let s = 0.5 / (trace + 1.0).sqrt()
+    mk(0.25 / s, (m[6] - m[9]) * s, (m[8] - m[2]) * s, (m[1] - m[4]) * s)
+  } else if m[0] > m[5] && m[0] > m[10] {
+    let s = 2.0 * (1.0 + m[0] - m[5] - m[10]).sqrt()
+    mk((m[6] - m[9]) / s, 0.25 * s, (m[4] + m[1]) / s, (m[8] + m[2]) / s)
+  } else if m[5] > m[10] {
+    let s = 2.0 * (1.0 + m[5] - m[0] - m[10]).sqrt()
+    mk((m[8] - m[2]) / s, (m[4] + m[1]) / s, 0.25 * s, (m[9] + m[6]) / s)
+  } else {
+    let s = 2.0 * (1.0 + m[10] - m[0] - m[5]).sqrt()
+    mk((m[1] - m[4]) / s, (m[8] + m[2]) / s, (m[9] + m[6]) / s, 0.25 * s)
+  }
+}
