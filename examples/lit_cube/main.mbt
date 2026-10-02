@@ -22,7 +22,7 @@ fn main raise {
   }
   @wgpu_mbt.require_native()
   let window = @yue.Window::new()
-  window.set_title("three.mbt — lit_cube")
+  window.set_title("three-native — lit_cube")
   let host = @yue.Container::new()
   host.set_background_color("#222222")
   window.set_content(host)

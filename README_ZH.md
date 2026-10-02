@@ -1,8 +1,8 @@
-# three-mbt [![CI](https://github.com/lb091188/three-mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/lb091188/three-mbt/actions/workflows/ci.yml)
+# three-native [![CI](https://github.com/lb091188/three-native/actions/workflows/ci.yml/badge.svg)](https://github.com/lb091188/three-native/actions/workflows/ci.yml)
 
 [three.js](https://threejs.org) 的 [MoonBit](https://www.moonbitlang.cn/) 迁移——WebGPU 渲染,3D 场景可直接嵌入 [moonbit-libyue](https://github.com/lb091188/moonbit-libyue) 桌面应用。
 
-[English](https://github.com/lb091188/three-mbt/blob/master/README.md) | 简体中文
+[English](https://github.com/lb091188/three-native/blob/master/README.md) | 简体中文
 
 ## 核心能力(当前)
 
@@ -33,14 +33,14 @@ camera.look_at(@math3d.Vector3::new(1.8, 1.4, 2.6), @math3d.Vector3::zero())
 
 **🎮 WebGPU 渲染器** —— 建在 [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt) 上(Vulkan / Metal / D3D12),WGSL 管线、逐 mesh GPU 资源缓存、深度测试、窗口尺寸自适应。
 
-**🖥 桌面嵌入** —— 与 moonbit-libyue 同窗口混排:yue 负责原生窗口与控件,three-mbt 拿控件的原生句柄建 GPU surface,3D 视图与按钮/菜单等原生控件并存。
+**🖥 桌面嵌入** —— 与 moonbit-libyue 同窗口混排:yue 负责原生窗口与控件,three-native 拿控件的原生句柄建 GPU surface,3D 视图与按钮/菜单等原生控件并存。
 
 ## 架构
 
 ```
 你的应用(MoonBit)
 │
-├── three-mbt ………………… 场景图 / 数学 / 几何 / 材质 / 光源(纯 MoonBit)
+├── three-native ………………… 场景图 / 数学 / 几何 / 材质 / 光源(纯 MoonBit)
 │     └── renderers …………… WebGPURenderer:WGSL 管线、GPU 资源缓存、帧调度
 │             └── wgpu-mbt …… wgpu-native 绑定(Vulkan / Metal / D3D12)
 │
@@ -57,17 +57,17 @@ camera.look_at(@math3d.Vector3::new(1.8, 1.4, 2.6), @math3d.Vector3::zero())
 ```sh
 moon new hello3d --user <你的用户名> --name hello3d
 cd hello3d
-moon add NoahLiu/three-mbt/math3d
-moon add NoahLiu/three-mbt/core
-moon add NoahLiu/three-mbt/renderers
+moon add NoahLiu/three-native/math3d
+moon add NoahLiu/three-native/core
+moon add NoahLiu/three-native/renderers
 ```
 
 把 `moon.mod` 的 `preferred_target` 改为 `"native"`,再在 `cmd/main/moon.pkg` 里声明要用到的包:
 
 ```
 import {
-  "NoahLiu/three-mbt/math3d",
-  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
 }
 ```
 
@@ -101,7 +101,7 @@ fn main {
 moon run examples/cube3d   # yue 窗口中的旋转立方体,15 秒自动退出
 ```
 
-几何体与光源在另外两个包,按需添加:`NoahLiu/three-mbt/geometries`(Sphere/Cylinder/Cone/Circle/Torus)、`NoahLiu/three-mbt/lights`(环境/方向/半球/点/聚光)。
+几何体与光源在另外两个包,按需添加:`NoahLiu/three-native/geometries`(Sphere/Cylinder/Cone/Circle/Torus)、`NoahLiu/three-native/lights`(环境/方向/半球/点/聚光)。
 
 ## 示例
 
@@ -127,6 +127,10 @@ moon check && moon test   # 静态检查 + 111 项单测
 moon run examples/cube3d  # 端到端冒烟(15 秒自动退出)
 ```
 
+## 与生态其它 3D 库的关系
+
+mooncakes 上另有 [mizchi/three](https://mooncakes.io/docs/mizchi/three)——three.js 的 FFI 绑定,仅支持 JS 目标(浏览器/Node)与 WebGL 渲染。本库与其互为补充:本库面向 **native 桌面**目标、WebGPU 渲染(wgpu-native)、可嵌入 moonbit-libyue 桌面应用;浏览器场景请使用 mizchi/three。
+
 ## 许可证
 
-`three-mbt` 以 [Apache-2.0](LICENSE) 发布。本项目是独立实现:未复制 [three.js](https://github.com/mrdoob/three.js)(MIT)的任何代码,公式、常数与边界行为对照其源码设计确定。依赖 [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt)(Apache-2.0)与 [moonbit-libyue](https://github.com/lb091188/moonbit-libyue)(MIT)。
+`three-native` 以 [Apache-2.0](LICENSE) 发布。本项目是独立实现:未复制 [three.js](https://github.com/mrdoob/three.js)(MIT)的任何代码,公式、常数与边界行为对照其源码设计确定。依赖 [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt)(Apache-2.0)与 [moonbit-libyue](https://github.com/lb091188/moonbit-libyue)(MIT)。

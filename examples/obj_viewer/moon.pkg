@@ -1,10 +1,10 @@
 import {
   "NoahLiu/moonbit-libyue/yue",
-  "NoahLiu/three-mbt/math3d",
-  "NoahLiu/three-mbt/core",
-  "NoahLiu/three-mbt/renderers",
-  "NoahLiu/three-mbt/loaders",
-  "NoahLiu/three-mbt/controls",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
+  "NoahLiu/three-native/renderers",
+  "NoahLiu/three-native/loaders",
+  "NoahLiu/three-native/controls",
   "Milky2018/wgpu_mbt",
 }
 

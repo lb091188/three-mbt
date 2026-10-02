@@ -1,4 +1,4 @@
-// cube3d:three.mbt 首个端到端示例——yue 窗口中的旋转立方体。
+// cube3d:three-native 首个端到端示例——yue 窗口中的旋转立方体。
 // 验收:窗口出现暗色背景 + 旋转的青色立方体(深度正确、背面剔除),
 // 15 秒自动退出或手动关闭,无段错误。
 
@@ -22,7 +22,7 @@ fn main raise {
   }
   @wgpu_mbt.require_native()
   let window = @yue.Window::new()
-  window.set_title("three.mbt — cube3d")
+  window.set_title("three-native — cube3d")
   let host = @yue.Container::new()
   host.set_background_color("#222222")
   window.set_content(host)

@@ -1,8 +1,8 @@
-# three-mbt [![CI](https://github.com/lb091188/three-mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/lb091188/three-mbt/actions/workflows/ci.yml)
+# three-native [![CI](https://github.com/lb091188/three-native/actions/workflows/ci.yml/badge.svg)](https://github.com/lb091188/three-native/actions/workflows/ci.yml)
 
 A [MoonBit](https://www.moonbitlang.com/) port of [three.js](https://threejs.org) — WebGPU rendering, with 3D scenes embeddable in [moonbit-libyue](https://github.com/lb091188/moonbit-libyue) desktop apps.
 
-English | [简体中文](https://github.com/lb091188/three-mbt/blob/master/README_ZH.md)
+English | [简体中文](https://github.com/lb091188/three-native/blob/master/README_ZH.md)
 
 ## What's in (current)
 
@@ -33,14 +33,14 @@ camera.look_at(@math3d.Vector3::new(1.8, 1.4, 2.6), @math3d.Vector3::zero())
 
 **🎮 WebGPU renderer** — built on [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt) (Vulkan / Metal / D3D12): WGSL pipelines, per-mesh GPU resource caching, depth testing, window-resize handling.
 
-**🖥 Desktop embedding** — mixes with moonbit-libyue in the same window: yue provides the native window and widgets, three-mbt takes the widget's native handle to create the GPU surface, so a 3D view coexists with native buttons and menus.
+**🖥 Desktop embedding** — mixes with moonbit-libyue in the same window: yue provides the native window and widgets, three-native takes the widget's native handle to create the GPU surface, so a 3D view coexists with native buttons and menus.
 
 ## Architecture
 
 ```
 your app (MoonBit)
 │
-├── three-mbt ………………… scene graph / math / geometry / materials / lights (pure MoonBit)
+├── three-native ………………… scene graph / math / geometry / materials / lights (pure MoonBit)
 │     └── renderers …………… WebGPURenderer: WGSL pipelines, GPU resource cache, frame flow
 │             └── wgpu-mbt …… wgpu-native bindings (Vulkan / Metal / D3D12)
 │
@@ -57,17 +57,17 @@ Prerequisites: the MoonBit native toolchain (`moonc` ≥ 0.10.14, check with `mo
 ```sh
 moon new hello3d --user <your-username> --name hello3d
 cd hello3d
-moon add NoahLiu/three-mbt/math3d
-moon add NoahLiu/three-mbt/core
-moon add NoahLiu/three-mbt/renderers
+moon add NoahLiu/three-native/math3d
+moon add NoahLiu/three-native/core
+moon add NoahLiu/three-native/renderers
 ```
 
 Set `preferred_target` to `"native"` in `moon.mod`, then declare the packages you use in `cmd/main/moon.pkg`:
 
 ```
 import {
-  "NoahLiu/three-mbt/math3d",
-  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
 }
 ```
 
@@ -101,7 +101,7 @@ fn main {
 moon run examples/cube3d   # rotating cube in a yue window, exits after 15 s
 ```
 
-Geometry generators and lights live in two more packages, add them as needed: `NoahLiu/three-mbt/geometries` (Sphere/Cylinder/Cone/Circle/Torus) and `NoahLiu/three-mbt/lights` (ambient/directional/hemisphere/point/spot).
+Geometry generators and lights live in two more packages, add them as needed: `NoahLiu/three-native/geometries` (Sphere/Cylinder/Cone/Circle/Torus) and `NoahLiu/three-native/lights` (ambient/directional/hemisphere/point/spot).
 
 ## Examples
 
@@ -127,6 +127,10 @@ moon check && moon test   # static check + 111 unit tests
 moon run examples/cube3d  # end-to-end smoke (auto-exits after 15 s)
 ```
 
+## Relationship to other 3D libraries
+
+Another package on mooncakes, [mizchi/three](https://mooncakes.io/docs/mizchi/three), provides typed FFI bindings to three.js for the **JavaScript target** (browser/Node) with WebGL rendering. This library is complementary rather than overlapping: it targets **native desktop**, renders via WebGPU (wgpu-native), and embeds into moonbit-libyue desktop apps. For browser scenarios, use mizchi/three.
+
 ## License
 
-`three-mbt` is released under [Apache-2.0](LICENSE). This is an independent implementation: no [three.js](https://github.com/mrdoob/three.js) code (MIT) was copied — its source was used as the design reference for formulas, constants and edge-case behavior. Dependencies: [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt) (Apache-2.0) and [moonbit-libyue](https://github.com/lb091188/moonbit-libyue) (MIT).
+`three-native` is released under [Apache-2.0](LICENSE). This is an independent implementation: no [three.js](https://github.com/mrdoob/three.js) code (MIT) was copied — its source was used as the design reference for formulas, constants and edge-case behavior. Dependencies: [wgpu-mbt](https://github.com/moonbit-community/wgpu-mbt) (Apache-2.0) and [moonbit-libyue](https://github.com/lb091188/moonbit-libyue) (MIT).

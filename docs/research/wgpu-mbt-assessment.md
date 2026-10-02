@@ -4,7 +4,7 @@
 
 ## 结论:附条件 Go
 
-作为 three-mbt 的 GPU 基础依赖引入,条件见「管理动作」。任何情况下 math/core 层不依赖它,退路只影响渲染器层。
+作为 three-native 的 GPU 基础依赖引入,条件见「管理动作」。任何情况下 math/core 层不依赖它,退路只影响渲染器层。
 
 ## 事实清单
 
@@ -39,4 +39,4 @@
 
 ## 生态位(非重复声明)
 
-wgpu-mbt = WebGPU 地基绑定(相当于浏览器世界的 WebGPU 标准);three-mbt = 地基上的场景库(three.js 层)。二者是 WebGL 与 three.js 的关系,非重复建设。
+wgpu-mbt = WebGPU 地基绑定(相当于浏览器世界的 WebGPU 标准);three-native = 地基上的场景库(three.js 层)。二者是 WebGL 与 three.js 的关系,非重复建设。

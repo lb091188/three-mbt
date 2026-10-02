@@ -1,5 +1,5 @@
 import {
-  "NoahLiu/three-mbt/math3d",
-  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
   "moonbitlang/core/math",
 }

@@ -1,4 +1,4 @@
-# three-mbt
+# three-native
 
 **three.js for MoonBit, on WebGPU — 3D scenes embeddable in native desktop apps.**
 

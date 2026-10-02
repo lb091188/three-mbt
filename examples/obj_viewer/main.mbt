@@ -25,7 +25,7 @@ extern "c" fn ffi_gdk_x11_display_get_xdisplay(display : UInt64) -> UInt64 = "gd
 /// v/vt/vn 面格式、任意多边形扇形三角化)
 let builtin_obj : String =
   #|
-  #|# three.mbt obj_viewer builtin cube (parsed in-place, no file IO)
+  #|# three-native obj_viewer builtin cube (parsed in-place, no file IO)
   #|v -0.6 -0.6 0.6
   #|v 0.6 -0.6 0.6
   #|v 0.6 0.6 0.6
@@ -93,7 +93,7 @@ fn main raise {
   camera.look_at(@math3d.Vector3::new(2.4, 1.8, 3.0), controls.target)
   // 窗口与容器
   let window = @yue.Window::new()
-  window.set_title("three.mbt — obj_viewer")
+  window.set_title("three-native — obj_viewer")
   let host = @yue.Container::new()
   host.set_background_color("#222222")
   window.set_content(host)

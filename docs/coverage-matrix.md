@@ -1,9 +1,9 @@
-# three.js → three-mbt 迁移覆盖矩阵
+# three.js → three-native 迁移覆盖矩阵
 
 对照基准:[threejs-ref](https://github.com/mrdoob/three.js)(three.js **r186**,0.186.0)`src/` 模块清单,逐模块标注迁移状态与差距。
 
 - ✅ 已迁移 · 🟡 部分迁移 · ❌ 未开始
-- 「位置」列指 three-mbt 中的实现包;three.js 的 cameras/materials/textures 在本库按数据层归入 `core` 包,几何生成器与光源独立成包
+- 「位置」列指 three-native 中的实现包;three.js 的 cameras/materials/textures 在本库按数据层归入 `core` 包,几何生成器与光源独立成包
 - 每完成一批迁移,同步更新本表
 
 | 模块 | 位置 | 状态 | 已迁移 | 差距 |
