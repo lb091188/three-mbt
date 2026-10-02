@@ -1,0 +1,7 @@
+import {
+  "NoahLiu/moonbit-libyue/yue",
+  "Milky2018/wgpu_mbt",
+  "Milky2018/wgpu_mbt/c",
+}
+
+options("is-main": true)

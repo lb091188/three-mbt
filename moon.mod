@@ -27,4 +27,5 @@ description = ""
 
 import {
   "Milky2018/wgpu_mbt@0.16.2",
+  "NoahLiu/moonbit-libyue@0.5.9",
 }
