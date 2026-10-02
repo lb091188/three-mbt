@@ -1,29 +1,18 @@
-// Learn more about moon.mod configuration:
-// https://docs.moonbitlang.com/en/latest/toolchain/moon/module.html
-//
-// To add a dependency, run this command in your terminal:
-//   moon add moonbitlang/x
-//
-// Or manually declare it in `import`, for example:
-// import {
-//   "moonbitlang/x@0.4.6",
-// }
-
-name = "NoahLiu/three.mbt"
+name = "NoahLiu/three-mbt"
 
 version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/lb091188/three-mbt"
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = [ "three", "3d", "webgpu", "graphics", "rendering" ]
 
 preferred_target = "native"
 
-description = ""
+description = "three.js for MoonBit on WebGPU: scene graph, cameras, lights, materials, geometries, loaders — embeddable in moonbit-libyue desktop apps"
 
 import {
   "Milky2018/wgpu_mbt@0.16.2",
