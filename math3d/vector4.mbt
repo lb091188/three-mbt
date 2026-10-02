@@ -51,12 +51,9 @@ pub fn Vector4::multiply_scalar(self : Vector4, s : Double) -> Vector4 {
   { x: self.x * s, y: self.y * s, z: self.z * s, w: self.w * s }
 }
 
-///| 数除(除零返回零向量)
+///| 数除(乘 1/s,除零得 ±Infinity/NaN,three.js divideScalar 同式)
 pub fn Vector4::divide_scalar(self : Vector4, s : Double) -> Vector4 {
-  if s == 0.0 {
-    return Vector4::zero()
-  }
-  { x: self.x / s, y: self.y / s, z: self.z / s, w: self.w / s }
+  self.multiply_scalar(1.0 / s)
 }
 
 ///| 点积
@@ -75,13 +72,10 @@ pub fn Vector4::length(self : Vector4) -> Double {
   self.length2().sqrt()
 }
 
-///| 单位化(零向量返回零)
+///| 单位化(零向量返回零;乘 1/(len||1),three.js normalize 同式)
 pub fn Vector4::normalize(self : Vector4) -> Vector4 {
   let len = self.length()
-  if len == 0.0 {
-    return Vector4::zero()
-  }
-  { x: self.x / len, y: self.y / len, z: self.z / len, w: self.w / len }
+  self.divide_scalar(if len == 0.0 { 1.0 } else { len })
 }
 
 ///| 线性插值

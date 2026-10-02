@@ -35,12 +35,9 @@ pub fn Vector2::multiply_scalar(self : Vector2, s : Double) -> Vector2 {
   { x: self.x * s, y: self.y * s }
 }
 
-///| 数除
+///| 数除(乘 1/s,除零得 ±Infinity/NaN,three.js divideScalar 同式)
 pub fn Vector2::divide_scalar(self : Vector2, s : Double) -> Vector2 {
-  if s == 0.0 {
-    return Vector2::zero()
-  }
-  { x: self.x / s, y: self.y / s }
+  self.multiply_scalar(1.0 / s)
 }
 
 ///| 点积
@@ -58,13 +55,10 @@ pub fn Vector2::length(self : Vector2) -> Double {
   self.length2().sqrt()
 }
 
-///| 单位化(零向量返回零)
+///| 单位化(零向量返回零;乘 1/(len||1),three.js normalize 同式)
 pub fn Vector2::normalize(self : Vector2) -> Vector2 {
   let len = self.length()
-  if len == 0.0 {
-    return Vector2::zero()
-  }
-  { x: self.x / len, y: self.y / len }
+  self.divide_scalar(if len == 0.0 { 1.0 } else { len })
 }
 
 ///| 取反

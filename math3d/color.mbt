@@ -1,4 +1,5 @@
-// three.js Color 迁移:线性分量 0..1;十六进制解析支持 #RGB/#RRGGBB。
+// three.js Color 迁移:工作色彩空间为 LinearSRGB(线性分量 0..1);
+// 十六进制解析支持 #RGB/#RRGGBB,sRGB↔线性转换同 three.js 色彩管理默认配置。
 
 ///| RGB 颜色(各分量 0..1)
 pub(all) struct Color {
@@ -39,7 +40,26 @@ pub fn Color::blue() -> Color {
   { r: 0.0, g: 0.0, b: 1.0 }
 }
 
-///| 解析 #RGB / #RRGGBB(无 # 亦可),非法返回 None
+// sRGB→线性(three.js ColorManagement.SRGBToLinear 同式)
+fn srgb_to_linear(c : Double) -> Double {
+  if c < 0.04045 {
+    c * 0.0773993808
+  } else {
+    @math.pow(c * 0.9478672986 + 0.0521327014, 2.4)
+  }
+}
+
+// 线性→sRGB(three.js ColorManagement.LinearToSRGB 同式)
+fn linear_to_srgb(c : Double) -> Double {
+  if c < 0.0031308 {
+    c * 12.92
+  } else {
+    1.055 * @math.pow(c, 0.41666) - 0.055
+  }
+}
+
+///| 解析 #RGB / #RRGGBB(无 # 亦可;分量按 sRGB 输入转线性,three.js
+///| setHex 默认色彩管理同语义),非法返回 None
 pub fn Color::from_hex(s : String) -> Color? {
   let h = if s.length() > 0 && s[0] == '#' {
     s[1:]
@@ -65,9 +85,9 @@ pub fn Color::from_hex(s : String) -> Color? {
       match (r, g, b) {
         (Some(r), Some(g), Some(b)) =>
           Some({
-            r: (r * 17).to_double() / 255.0,
-            g: (g * 17).to_double() / 255.0,
-            b: (b * 17).to_double() / 255.0,
+            r: srgb_to_linear((r * 17).to_double() / 255.0),
+            g: srgb_to_linear((g * 17).to_double() / 255.0),
+            b: srgb_to_linear((b * 17).to_double() / 255.0),
           })
         _ => None
       }
@@ -82,9 +102,9 @@ pub fn Color::from_hex(s : String) -> Color? {
       match (r1, r2, g1, g2, b1, b2) {
         (Some(r1), Some(r2), Some(g1), Some(g2), Some(b1), Some(b2)) =>
           Some({
-            r: (r1 * 16 + r2).to_double() / 255.0,
-            g: (g1 * 16 + g2).to_double() / 255.0,
-            b: (b1 * 16 + b2).to_double() / 255.0,
+            r: srgb_to_linear((r1 * 16 + r2).to_double() / 255.0),
+            g: srgb_to_linear((g1 * 16 + g2).to_double() / 255.0),
+            b: srgb_to_linear((b1 * 16 + b2).to_double() / 255.0),
           })
         _ => None
       }
@@ -93,16 +113,16 @@ pub fn Color::from_hex(s : String) -> Color? {
   }
 }
 
-///| 输出 #RRGGBB(分量钳到 0..1)
+///| 输出 #RRGGBB(线性分量转 sRGB 后钳到 0..1,three.js getHex 同语义)
 pub fn Color::to_hex(self : Color) -> String {
   fn byte(v : Double) -> Int {
-    let c = if v < 0.0 {
+    let c = linear_to_srgb(if v < 0.0 {
       0.0
     } else if v > 1.0 {
       1.0
     } else {
       v
-    }
+    })
     (c * 255.0 + 0.5).to_int()
   }
   let r = byte(self.r)

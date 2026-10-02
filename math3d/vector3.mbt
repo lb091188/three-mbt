@@ -50,12 +50,9 @@ pub fn Vector3::multiply_scalar(self : Vector3, s : Double) -> Vector3 {
   { x: self.x * s, y: self.y * s, z: self.z * s }
 }
 
-///| 数除(除零返回零向量)
+///| 数除(乘 1/s,除零得 ±Infinity/NaN,three.js divideScalar 同式)
 pub fn Vector3::divide_scalar(self : Vector3, s : Double) -> Vector3 {
-  if s == 0.0 {
-    return Vector3::zero()
-  }
-  { x: self.x / s, y: self.y / s, z: self.z / s }
+  self.multiply_scalar(1.0 / s)
 }
 
 ///| 点积
@@ -82,13 +79,10 @@ pub fn Vector3::length(self : Vector3) -> Double {
   self.length2().sqrt()
 }
 
-///| 单位化(零向量返回零)
+///| 单位化(零向量返回零;乘 1/(len||1),three.js normalize 同式)
 pub fn Vector3::normalize(self : Vector3) -> Vector3 {
   let len = self.length()
-  if len == 0.0 {
-    return Vector3::zero()
-  }
-  { x: self.x / len, y: self.y / len, z: self.z / len }
+  self.divide_scalar(if len == 0.0 { 1.0 } else { len })
 }
 
 ///| 取反
@@ -130,20 +124,62 @@ pub fn Vector3::equals(self : Vector3, other : Vector3) -> Bool {
   self.x == other.x && self.y == other.y && self.z == other.z
 }
 
-///| 按分量取较小
-pub fn Vector3::min(self : Vector3, other : Vector3) -> Vector3 {
-  {
-    x: if self.x < other.x { self.x } else { other.x },
-    y: if self.y < other.y { self.y } else { other.y },
-    z: if self.z < other.z { self.z } else { other.z },
+// Math.min 语义:NaN 传播;±0 相等时取 -0(1/x<0 判 -0)
+fn min_double(a : Double, b : Double) -> Double {
+  if a != a {
+    return a
+  }
+  if b != b {
+    return b
+  }
+  if a == b {
+    if a == 0.0 && (1.0 / a < 0.0 || 1.0 / b < 0.0) {
+      return -0.0
+    }
+    return a
+  }
+  if a < b {
+    a
+  } else {
+    b
   }
 }
 
-///| 按分量取较大
+// Math.max 语义:NaN 传播;±0 相等时取 +0(两者皆 -0 才为 -0)
+fn max_double(a : Double, b : Double) -> Double {
+  if a != a {
+    return a
+  }
+  if b != b {
+    return b
+  }
+  if a == b {
+    if a == 0.0 && !(1.0 / a < 0.0 && 1.0 / b < 0.0) {
+      return 0.0
+    }
+    return a
+  }
+  if a > b {
+    a
+  } else {
+    b
+  }
+}
+
+///| 按分量取较小(Math.min 语义:NaN 传播、±0 取 -0)
+pub fn Vector3::min(self : Vector3, other : Vector3) -> Vector3 {
+  {
+    x: min_double(self.x, other.x),
+    y: min_double(self.y, other.y),
+    z: min_double(self.z, other.z),
+  }
+}
+
+///| 按分量取较大(Math.max 语义:NaN 传播、±0 取 +0)
 pub fn Vector3::max(self : Vector3, other : Vector3) -> Vector3 {
   {
-    x: if self.x > other.x { self.x } else { other.x },
-    y: if self.y > other.y { self.y } else { other.y },
-    z: if self.z > other.z { self.z } else { other.z },
+    x: max_double(self.x, other.x),
+    y: max_double(self.y, other.y),
+    z: max_double(self.z, other.z),
   }
 }

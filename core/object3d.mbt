@@ -71,14 +71,26 @@ pub fn Object3D::update_matrix_world(self : Object3D, force : Bool) -> Unit {
   }
 }
 
-///| 挂子节点(若已在其他父下先摘除)
+///| 挂子节点(若已在其他父下(含已是自身子节点)先摘除再追加到末尾,
+///| three.js add 的 removeFromParent+push 同语义:重复 add 会移动到
+///| children 末尾;加自身为子节点时忽略)
 pub fn Object3D::add(self : Object3D, child : Object3D) -> Unit {
-  match child.parent {
-    Some(p) => if p.id == self.id { return }
-    None => ()
+  if self.id == child.id {
+    return
   }
   match child.parent {
-    Some(p) => p.remove(child)
+    Some(p) => {
+      child.parent = None
+      let mut i = 0
+      while i < p.children.length() {
+        if p.children[i].id == child.id {
+          let _ = p.children.remove(i)
+          ()
+        } else {
+          i = i + 1
+        }
+      }
+    }
     None => ()
   }
   child.parent = Some(self)
@@ -104,8 +116,34 @@ pub fn Object3D::remove(self : Object3D, child : Object3D) -> Unit {
   }
 }
 
-///| 世界坐标(需已 update_matrix_world)
+///| 更新自身世界矩阵(update_parents=true 先沿父链更新,update_children=true
+///| 向子树传播;three.js updateWorldMatrix 同语义)
+pub fn Object3D::update_world_matrix(
+  self : Object3D,
+  update_parents : Bool,
+  update_children : Bool,
+) -> Unit {
+  if update_parents {
+    match self.parent {
+      Some(p) => p.update_world_matrix(true, false)
+      None => ()
+    }
+  }
+  self.update_matrix()
+  match self.parent {
+    Some(p) => self.matrix_world = p.matrix_world.multiply(self.matrix)
+    None => self.matrix_world = self.matrix
+  }
+  if update_children {
+    for child in self.children {
+      child.update_world_matrix(false, true)
+    }
+  }
+}
+
+///| 世界坐标(先沿父链更新世界矩阵再取,three.js getWorldPosition 同语义)
 pub fn Object3D::world_position(self : Object3D) -> @math3d.Vector3 {
+  self.update_world_matrix(true, false)
   self.matrix_world.apply_point(@math3d.Vector3::zero())
 }
 

@@ -1,18 +1,20 @@
 // three.js BufferGeometry 迁移:顶点属性与索引(interleaved 后续按需)。
 
-///| 顶点几何(position/normals 交错前为独立数组,uv 后续)
+///| 顶点几何(position/normals/uvs 交错前为独立数组)
 pub(all) struct BufferGeometry {
   /// 顶点位置 xyz 连续
   positions : Array[Double]
   /// 法线 xyz 连续(可选,长度与 positions 相等或为空)
   normals : Array[Double]
+  /// 纹理坐标 uv 连续(可选,长度为顶点数×2 或为空)
+  uvs : Array[Double]
   /// 顶点索引(空 = 非索引化绘制)
   indices : Array[UInt]
 }
 
 ///| 空几何
 pub fn BufferGeometry::empty() -> BufferGeometry {
-  { positions: [], normals: [], indices: [] }
+  { positions: [], normals: [], uvs: [], indices: [] }
 }
 
 ///| 顶点数
@@ -93,7 +95,7 @@ pub fn BufferGeometry::box(w : Double, h : Double, d : Double) -> BufferGeometry
     indices.push(base + 3)
     base = base + 4
   }
-  { positions, normals, indices, }
+  { positions, normals, uvs: [], indices }
 }
 
 ///| PlaneGeometry:XY 平面(朝 +Z),seg 1×1
@@ -107,6 +109,7 @@ pub fn BufferGeometry::plane(w : Double, h : Double) -> BufferGeometry {
     normals: [
       0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
     ],
+    uvs: [],
     indices: [ 0, 1, 2, 0, 2, 3, ],
   }
 }

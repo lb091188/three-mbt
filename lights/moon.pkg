@@ -1,0 +1,7 @@
+// three.js 光源数据层:五种光源的颜色/强度/衰减参数,场景挂接经 obj 组合;
+// WGSL 光照计算与阴影配置由后续批次接入。
+import {
+  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-mbt/math3d",
+  "moonbitlang/core/math",
+}

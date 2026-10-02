@@ -1,0 +1,5 @@
+import {
+  "NoahLiu/three-mbt/core",
+  "NoahLiu/three-mbt/math3d",
+  "moonbitlang/core/math",
+}

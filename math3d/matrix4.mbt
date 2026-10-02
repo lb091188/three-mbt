@@ -54,7 +54,7 @@ pub fn Matrix4::transpose(self : Matrix4) -> Matrix4 {
   { e: r }
 }
 
-///| 求逆(奇异矩阵返回单位阵,three.js 同语义 setFromMatrix4 对应物)
+///| 求逆(奇异矩阵返回全零矩阵,three.js Matrix4.invert 同语义)
 pub fn Matrix4::invert(self : Matrix4) -> Matrix4 {
   let m = self.e
   let inv = Array::make(16, 0.0)
@@ -156,7 +156,7 @@ pub fn Matrix4::invert(self : Matrix4) -> Matrix4 {
     m[8] * m[2] * m[5]
   let det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12]
   if det == 0.0 {
-    return Matrix4::identity()
+    return { e: Array::make(16, 0.0) }
   }
   let det_inv = 1.0 / det
   let r = Array::make(16, 0.0)
@@ -206,7 +206,9 @@ pub fn Matrix4::make_rotation_axis(
   m
 }
 
-///| 透视投影矩阵(three.js PerspectiveCamera 同式;fov_y/aspect/near/far,near>0)
+///| 透视投影矩阵(fov_y/aspect/near/far;深度采用 WebGPU 裁剪域 z∈[0,1],
+///| 对应 three.js makePerspective 的 WebGPUCoordinateSystem 分支,与本仓
+///| WebGPU 渲染器的 depth24plus+LESS 约定一致)
 pub fn Matrix4::make_perspective(
   fov_y : Double,
   aspect : Double,
@@ -214,17 +216,17 @@ pub fn Matrix4::make_perspective(
   far : Double,
 ) -> Matrix4 {
   let f = 1.0 / @math.tan(fov_y / 2.0)
-  let nf = 1.0 / (near - far)
   let m = Array::make(16, 0.0)
   m[0] = f / aspect
   m[5] = f
-  m[10] = (far + near) * nf
+  m[10] = -far / (far - near)
   m[11] = -1.0
-  m[14] = 2.0 * far * near * nf
+  m[14] = (-far * near) / (far - near)
   { e: m }
 }
 
-///| 正交投影矩阵
+///| 正交投影矩阵(WebGPU 裁剪域 z∈[0,1],对应 three.js makeOrthographic
+///| 的 WebGPUCoordinateSystem 分支)
 pub fn Matrix4::make_orthographic(
   left : Double,
   right : Double,
@@ -235,85 +237,87 @@ pub fn Matrix4::make_orthographic(
 ) -> Matrix4 {
   let m = Array::make(16, 0.0)
   let w = 1.0 / (left - right)
-  let h = 1.0 / (top - bottom)
-  let p = 1.0 / (near - far)
   m[0] = -2.0 * w
-  m[5] = -2.0 * h
-  m[10] = 2.0 * p
+  m[5] = 2.0 / (top - bottom)
+  m[10] = -1.0 / (far - near)
   m[12] = (left + right) * w
-  m[13] = (top + bottom) * h
-  m[14] = (far + near) * p
+  m[13] = -(top + bottom) / (top - bottom)
+  m[14] = -near / (far - near)
   m[15] = 1.0
   { e: m }
 }
 
-///| 视图矩阵(three.js Matrix4.lookAt 同式;eye/target/up)
+///| 朝向矩阵:只设置旋转部分(不含平移;eye==target 回退 z=(0,0,1),
+///| up 与视线平行时对 z 加 0.0001 扰动后重叉积,three.js Matrix4.lookAt
+///| 同式;视图矩阵 = 本结果配合平移使用或由相机世界矩阵求逆得到)
 pub fn Matrix4::make_look_at(
   eye : Vector3,
   target : Vector3,
   up : Vector3,
 ) -> Matrix4 {
-  let z = eye.sub(target).normalize()
-  let x = up.cross(z)
-  // up 与视线共线时叉积退化,fallback 到正交轴(three.js 检查 length 为 0)
-  let x = if x.length2() < 0.0000000001 {
-    let alt = if up.x.abs() < 0.9 {
-      Vector3::unit_x()
-    } else {
-      Vector3::unit_y()
-    }
-    alt.cross(z)
-  } else {
-    x
+  let mut z = eye.sub(target)
+  if z.length2() == 0.0 {
+    // eye 与 target 重合
+    z = { x: 0.0, y: 0.0, z: 1.0 }
   }
-  let x = x.normalize()
+  z = z.normalize()
+  let mut x = up.cross(z)
+  if x.length2() == 0.0 {
+    // up 与 z 平行:对 z 微扰后重叉积(three.js 同式)
+    z = if up.z.abs() == 1.0 {
+      { x: z.x + 0.0001, y: z.y, z: z.z }
+    } else {
+      { x: z.x, y: z.y, z: z.z + 0.0001 }
+    }
+    z = z.normalize()
+    x = up.cross(z)
+  }
+  x = x.normalize()
   let y = z.cross(x)
+  // 基向量按列排布(three.js lookAt 同式:te[0]=x.x、te[4]=y.x、te[8]=z.x)
   let m = Array::make(16, 0.0)
   m[0] = x.x
-  m[1] = y.x
-  m[2] = z.x
-  m[4] = x.y
+  m[1] = x.y
+  m[2] = x.z
+  m[4] = y.x
   m[5] = y.y
-  m[6] = z.y
-  m[8] = x.z
-  m[9] = y.z
+  m[6] = y.z
+  m[8] = z.x
+  m[9] = z.y
   m[10] = z.z
-  m[12] = -x.dot(eye)
-  m[13] = -y.dot(eye)
-  m[14] = -z.dot(eye)
   m[15] = 1.0
   { e: m }
 }
 
-///| 变换点(w=1,返回变换后 w 归一坐标)
+///| 变换点(w=1,除以 w 做透视归一;w=0 时得 ±Infinity/NaN,three.js
+///| applyMatrix4 同式)
 pub fn Matrix4::apply_point(
   self : Matrix4,
   p : Vector3,
 ) -> Vector3 {
   let m = self.e
-  let w = m[3] * p.x + m[7] * p.y + m[11] * p.z + m[15]
-  if w == 0.0 {
-    return Vector3::zero()
-  }
-  let iw = 1.0 / w
+  let w = 1.0 / (m[3] * p.x + m[7] * p.y + m[11] * p.z + m[15])
   {
-    x: (m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12]) * iw,
-    y: (m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13]) * iw,
-    z: (m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]) * iw,
+    x: (m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12]) * w,
+    y: (m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13]) * w,
+    z: (m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]) * w,
   }
 }
 
-///| 变换方向(w=0,不做平移与透视除法)
+///| 变换方向(w=0,不做平移,变换后归一化;零向量输入返回零,three.js
+///| transformDirection 同式)
 pub fn Matrix4::apply_direction(
   self : Matrix4,
   v : Vector3,
 ) -> Vector3 {
   let m = self.e
-  {
+  let d : Vector3 = {
     x: m[0] * v.x + m[4] * v.y + m[8] * v.z,
     y: m[1] * v.x + m[5] * v.y + m[9] * v.z,
     z: m[2] * v.x + m[6] * v.y + m[10] * v.z,
   }
+  let len = d.length()
+  d.multiply_scalar(1.0 / (if len == 0.0 { 1.0 } else { len }))
 }
 
 ///| 分量相等(精确)
@@ -359,4 +363,47 @@ pub fn Matrix4::to_quaternion(self : Matrix4) -> Quaternion {
     let s = 2.0 * (1.0 + m[10] - m[0] - m[5]).sqrt()
     mk((m[1] - m[4]) / s, (m[8] + m[2]) / s, (m[9] + m[6]) / s, 0.25 * s)
   }
+}
+
+///| 分解为 (平移, 旋转, 缩放)(假定底行 [0,0,0,1];旋转部分按各列长度
+///| 去缩放后提取四元数,det<0(镜像)时 sx 取负,three.js Matrix4.decompose
+///| 同式)
+pub fn Matrix4::decompose(
+  self : Matrix4,
+) -> (Vector3, Quaternion, Vector3) {
+  let m = self.e
+  let position : Vector3 = { x: m[12], y: m[13], z: m[14] }
+  // determinantAffine:左上 3x3 行列式
+  let det = m[0] * (m[5] * m[10] - m[6] * m[9]) -
+    m[4] * (m[1] * m[10] - m[2] * m[9]) +
+    m[8] * (m[1] * m[6] - m[2] * m[5])
+  if det == 0.0 {
+    return (position, Quaternion::identity(), Vector3::new(1.0, 1.0, 1.0))
+  }
+  let cx : Vector3 = { x: m[0], y: m[1], z: m[2] }
+  let sx = cx.length()
+  let cy : Vector3 = { x: m[4], y: m[5], z: m[6] }
+  let sy = cy.length()
+  let cz : Vector3 = { x: m[8], y: m[9], z: m[10] }
+  let sz = cz.length()
+  // 行列式为负(镜像)时反转一个缩放分量
+  let sx = if det < 0.0 { -sx } else { sx }
+  // 旋转部分去缩放后提取四元数
+  let isx = 1.0 / sx
+  let isy = 1.0 / sy
+  let isz = 1.0 / sz
+  let rot = Array::make(16, 0.0)
+  rot[0] = m[0] * isx
+  rot[1] = m[1] * isx
+  rot[2] = m[2] * isx
+  rot[4] = m[4] * isy
+  rot[5] = m[5] * isy
+  rot[6] = m[6] * isy
+  rot[8] = m[8] * isz
+  rot[9] = m[9] * isz
+  rot[10] = m[10] * isz
+  rot[15] = 1.0
+  let rot_m : Matrix4 = { e: rot, }
+  let quat = rot_m.to_quaternion()
+  (position, quat, Vector3::new(sx, sy, sz))
 }

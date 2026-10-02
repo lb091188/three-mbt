@@ -16,18 +16,17 @@ pub fn Quaternion::identity() -> Quaternion {
   { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
 }
 
-///| 从单位轴+弧度角构造
+///| 从轴+弧度角构造(轴需已单位化;不做归一化,three.js setFromAxisAngle 同式)
 pub fn Quaternion::from_axis_angle(
   axis : Vector3,
   angle : Double,
 ) -> Quaternion {
   let h = angle / 2.0
   let s = @math.sin(h)
-  let n = axis.normalize()
   {
-    x: n.x * s,
-    y: n.y * s,
-    z: n.z * s,
+    x: axis.x * s,
+    y: axis.y * s,
+    z: axis.z * s,
     w: @math.cos(h),
   }
 }
@@ -93,42 +92,48 @@ pub fn Quaternion::dot(self : Quaternion, other : Quaternion) -> Double {
   self.w * other.w
 }
 
-///| 球面线性插值(three.js Quaternion.slerp 同式)
+///| 球面线性插值(dot<0 时对 other 全分量取反走短弧,再按 theta 精确式
+///| 插值;three.js Quaternion.slerp 同式)
 pub fn Quaternion::slerp(
   self : Quaternion,
   other : Quaternion,
   t : Double,
 ) -> Quaternion {
   let a = self
-  let mut b = other
-  let mut d = a.dot(b)
+  let mut bx = other.x
+  let mut by = other.y
+  let mut bz = other.z
+  let mut bw = other.w
+  let mut d = a.dot(other)
   if d < 0.0 {
-    b = b.invert()
+    bx = -bx
+    by = -by
+    bz = -bz
+    bw = -bw
     d = -d
   }
-  if d > 0.9995 {
-    return a.lerp(b, t).normalize()
-  }
-  let theta0 = @math.acos(d)
-  let theta = theta0 * t
-  let sin_theta0 = @math.sin(theta0)
-  let s0 = @math.cos(theta0 - theta) / sin_theta0
-  let s1 = @math.sin(theta) / sin_theta0
-  {
-    x: a.x * s0 + b.x * s1,
-    y: a.y * s0 + b.y * s1,
-    z: a.z * s0 + b.z * s1,
-    w: a.w * s0 + b.w * s1,
-  }
-}
-
-///| 线性插值(内部供 slerp 近似路径)
-fn Quaternion::lerp(self : Quaternion, other : Quaternion, t : Double) -> Quaternion {
-  {
-    x: self.x + (other.x - self.x) * t,
-    y: self.y + (other.y - self.y) * t,
-    z: self.z + (other.z - self.z) * t,
-    w: self.w + (other.w - self.w) * t,
+  let mut s = 1.0 - t
+  if d < 0.9995 {
+    // slerp 精确式:s = sin((1-t)θ)/sinθ,t = sin(tθ)/sinθ
+    let theta = @math.acos(d)
+    let sin_theta = @math.sin(theta)
+    s = @math.sin(s * theta) / sin_theta
+    let t2 = @math.sin(t * theta) / sin_theta
+    {
+      x: a.x * s + bx * t2,
+      y: a.y * s + by * t2,
+      z: a.z * s + bz * t2,
+      w: a.w * s + bw * t2,
+    }
+  } else {
+    // 小角度:线性插值后归一化
+    let lerped : Quaternion = {
+      x: a.x * s + bx * t,
+      y: a.y * s + by * t,
+      z: a.z * s + bz * t,
+      w: a.w * s + bw * t,
+    }
+    lerped.normalize()
   }
 }
 
