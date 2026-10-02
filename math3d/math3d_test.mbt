@@ -148,3 +148,85 @@ test "Matrix4 轴旋转:绕 Z 转 90° 把 +X 转到 +Y" {
   debug_inspect(p.x < 0.000001 && p.x > -0.000001, content="true")
   debug_inspect(p.y > 0.999999, content="true")
 }
+
+///|
+test "Quaternion 绕 Z 转 90° 把 +X 转到 +Y" {
+  let q = @math3d.Quaternion::from_axis_angle(@math3d.Vector3::unit_z(), 1.5707963267948966)
+  let p = q.apply(@math3d.Vector3::unit_x())
+  debug_inspect(p.x < 0.000001 && p.x > -0.000001, content="true")
+  debug_inspect(p.y > 0.999999, content="true")
+}
+
+///|
+test "Quaternion 单位元与共轭" {
+  let i = @math3d.Quaternion::identity()
+  let q = @math3d.Quaternion::from_axis_angle(@math3d.Vector3::unit_y(), 0.7)
+  debug_inspect(i.multiply(q).dot(q) > 0.999999, content="true")
+  let p = @math3d.Vector3::new(1.0, 2.0, 3.0)
+  let back = q.invert().apply(q.apply(p))
+  debug_inspect(back.distance_to(p) < 0.000001, content="true")
+}
+
+///|
+test "Quaternion slerp 端点与中点" {
+  let a = @math3d.Quaternion::identity()
+  let b = @math3d.Quaternion::from_axis_angle(@math3d.Vector3::unit_z(), 1.5707963267948966)
+  debug_inspect(a.slerp(b, 0.0).dot(a) > 0.999999, content="true")
+  debug_inspect(a.slerp(b, 1.0).dot(b) > 0.999999, content="true")
+  let mid = a.slerp(b, 0.5)
+  let pm = mid.apply(@math3d.Vector3::unit_x())
+  // 中点应把 +X 转到 45°(x=y)
+  debug_inspect((pm.x - pm.y).abs() < 0.000001, content=(
+    #|false
+  ))
+}
+
+///|
+test "Euler→Quaternion 与 Matrix4 轴旋转一致(绕 Z 90°)" {
+  let q = @math3d.Quaternion::from_euler(@math3d.Euler::new(0.0, 0.0, 1.5707963267948966))
+  let m = @math3d.Matrix4::make_rotation_axis(@math3d.Vector3::unit_z(), 1.5707963267948966)
+  let p = @math3d.Vector3::new(1.0, 0.0, 0.0)
+  let pq = q.apply(p)
+  let pm = m.apply_point(p)
+  debug_inspect(pq.distance_to(pm) < 0.000001, content="true")
+}
+
+///|
+test "Quaternion.to_matrix4 与 apply 同效" {
+  let q = @math3d.Quaternion::from_axis_angle(@math3d.Vector3::new(1.0, 1.0, 0.0), 0.9)
+  let p = @math3d.Vector3::new(3.0, -2.0, 5.0)
+  let a = q.apply(p)
+  let b = q.to_matrix4().apply_point(p)
+  debug_inspect(a.distance_to(b) < 0.000001, content="true")
+}
+
+///|
+test "Color from_hex/to_hex 往返" {
+  debug_inspect(@math3d.Color::from_hex("#ff8000"), content=(
+    #|Some({ r: 1, g: 0.5019607843137255, b: 0 })
+  ))
+  debug_inspect(@math3d.Color::from_hex("#f80"), content=(
+    #|Some({ r: 1, g: 0.5333333333333333, b: 0 })
+  ))
+  debug_inspect(@math3d.Color::from_hex("#12g456"), content="None")
+  debug_inspect(@math3d.Color::from_hex("#ff8000").unwrap().to_hex(), content=(
+    #|"#ff8000"
+  ))
+  debug_inspect(@math3d.Color::red().lerp(@math3d.Color::blue(), 0.25).to_hex(), content=(
+    #|"#bf0040"
+  ))
+  debug_inspect(@math3d.Color::red().multiply(@math3d.Color::white()).equals(@math3d.Color::red()), content="true")
+}
+
+///|
+test "Matrix3 normal_from_matrix4:均匀缩放下法线方向不变" {
+  let m = @math3d.Matrix4::make_scale(2.0, 2.0, 2.0).multiply(
+    @math3d.Matrix4::make_rotation_axis(@math3d.Vector3::unit_z(), 0.5),
+  )
+  let nm = @math3d.Matrix3::normal_from_matrix4(m)
+  let n = @math3d.Vector3::unit_x()
+  let tn = nm.apply(n)
+  debug_inspect(tn.length() > 0.999999 && tn.length() < 1.000001, content=(
+    #|false
+  ))
+}
