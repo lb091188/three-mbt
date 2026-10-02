@@ -1,0 +1,134 @@
+# CI 流水线:三平台(Linux + Windows + macOS)
+#
+# 链路:
+#   装系统依赖(GTK 开发包 + xvfb + Vulkan 软件渲染)→ 安装 moon
+#   → moon check(零错误零警告)→ moon test(111 项单测 + wgpu headless 冒烟)
+#   → Linux 侧 xvfb 虚拟显示 + lavapipe 软件渲染跑 cube3d 端到端冒烟
+#
+# 说明:
+# - 链接参数全部由依赖包的 prebuild 钩子生成并传播(moonbit-libyue 的
+#   scripts/prebuild.py 输出 gtk 等 link_configs;wgpu-mbt 的 build.js 下载
+#   wgpu-native 静态库),workflow 不写任何链接配置。
+# - moonbit-libyue 的静态库随 mooncakes 包分发(lib/<平台>/),无需本地
+#   构建原生层;Linux 侧 apt 包只为满足 pkg-config 探测与 GUI 运行。
+# - runner 无独显,Vulkan 走 mesa lavapipe 软件渲染(cube3d 已在本地
+#   lavapipe 环境实测渲染通过)。
+# - cube3d 自带 15 秒自动退出;冒烟判定 = 退出码 0、输出含「渲染器就绪」
+#   与不含「失败」(渲染建立/渲染帧出错只打印不改变退出码,必须 grep
+#   输出兜住)。
+# - Windows / macOS 不做运行冒烟(headless 会话不可靠:无窗口会话/
+#   无 WindowServer),check + test 链接成功即强验证。
+
+name: CI
+
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux(构建 + 测试 + xvfb 冒烟)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装系统依赖(GTK/webkit/X11 开发包 + xvfb + Vulkan 软件渲染)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-3-dev libpango1.0-dev libfontconfig1-dev libx11-dev \
+            xvfb mesa-vulkan-drivers
+
+      - name: 安装 moon 工具链
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: 缓存 wgpu-native 静态库下载
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/wgpu_mbt
+          key: wgpu-native-linux-x64
+
+      - name: 静态检查 + 单元测试
+        run: moon check && moon test
+
+      - name: cube3d 端到端冒烟(xvfb + lavapipe,15 秒自动退出)
+        run: |
+          set +e
+          timeout 300s xvfb-run -a moon run examples/cube3d >/tmp/cube.out 2>&1
+          code=$?
+          set -e
+          cat /tmp/cube.out
+          if [ "$code" -ne 0 ]; then
+            echo "::error::冒烟失败,退出码 $code(预期 0 = 15 秒自动退出)"
+            exit 1
+          fi
+          if ! grep -q "渲染器就绪" /tmp/cube.out; then
+            echo "::error::渲染器未建立(输出中无「渲染器就绪」)"
+            exit 1
+          fi
+          if grep -q "失败" /tmp/cube.out; then
+            echo "::error::冒烟输出含「失败」字样(渲染建立/渲染帧出错)"
+            exit 1
+          fi
+
+  windows:
+    name: Windows(MSVC 检查 + 测试)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 moon 工具链
+        shell: pwsh
+        run: |
+          iwr https://cli.moonbitlang.com/install/powershell.ps1 -useb | iex
+          echo "$env:USERPROFILE\.moon\bin" >> $env:GITHUB_PATH
+
+      # 依赖包 moonbit-libyue 的 prebuild 钩子写死 `python3
+      # scripts/prebuild.py`,Windows runner 只有 python.exe——复制一份
+      # 改名放进已入 PATH 的 ~/.moon/bin,后续 python3 命令即可解析。
+      - name: 提供 python3 命令别名
+        shell: pwsh
+        run: |
+          $py = (Get-Command python).Source
+          Copy-Item $py "$env:USERPROFILE\.moon\bin\python3.exe"
+
+      - name: 缓存 wgpu-native 静态库下载
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\wgpu_mbt\cache
+          key: wgpu-native-windows-x64
+
+      - name: 检查 + 测试(MSVC 环境)
+        shell: cmd
+        run: >-
+          for /f "tokens=*" %%i in ('"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath')
+          do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          && moon check
+          && moon test
+
+  macos:
+    name: macOS(检查 + 测试)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 moon 工具链
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: 缓存 wgpu-native 静态库下载
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/wgpu_mbt
+          key: wgpu-native-macos-arm64
+
+      # clang 与 Node 为 Runner 自带;wgpu-native 静态库由 wgpu-mbt 的
+      # build.js 钩子自动下载,无需本地构建。
+      - name: 静态检查 + 单元测试
+        run: moon check && moon test
