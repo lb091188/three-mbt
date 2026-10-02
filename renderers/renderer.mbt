@@ -1,9 +1,11 @@
 // WebGPURenderer:建在 wgpu_mbt 之上的帧渲染器。
 // surface 由宿主窗口的原生句柄创建(X11 路径已真机趟通)。
 
-///| 单个 mesh 的 GPU 资源(顶点/索引/uniform/绑定组)
+///| 单个 mesh 的 GPU 资源(顶点/索引/uniform/绑定组;法线缓冲仅 lit 材质有)
 struct GpuMesh {
   vbuf : @wgpu_mbt.Buffer
+  /// 法线顶点缓冲(lit 管线 slot1;Basic 材质或无 normals 的几何为 None)
+  nbuf : @wgpu_mbt.Buffer?
   ibuf : @wgpu_mbt.Buffer
   ubuf : @wgpu_mbt.Buffer
   bind_group : @wgpu_mbt.BindGroup
@@ -19,11 +21,12 @@ pub(all) struct WebGPURenderer {
   surface : @wgpu_mbt.Surface
   format : @wgpu_mbt.TextureFormat
   pipeline_basic : @wgpu_mbt.RenderPipeline
+  pipeline_lit : @wgpu_mbt.RenderPipeline
   bgl : @wgpu_mbt.BindGroupLayout
   mut width : UInt
   mut height : UInt
   mut depth_view : @wgpu_mbt.TextureView?
-  /// 节点 id → GPU 资源缓存(geometry 变更后调 invalidate_mesh)
+  /// 节点 id → GPU 资源缓存(geometry/材质变更后调 invalidate_mesh)
   mut mesh_cache : @hashmap.HashMap[UInt64, GpuMesh]
 }
 
@@ -54,7 +57,7 @@ pub fn WebGPURenderer::from_xlib(
     ),
   )
   // uniform BGL:便捷版固定 Fragment 可见性,顶点阶段用 mvp 必须
-  // VERTEX|FRAGMENT,走通用 BindGroupLayoutBuilder
+  // VERTEX|FRAGMENT,走通用 BindGroupLayoutBuilder(Basic/lit 两管线共用)
   let bglb = @wgpu_mbt.BindGroupLayoutBuilder::new(max_entries=1UL)
   let _bgl_ok = bglb.add_buffer(
     0U,
@@ -66,6 +69,7 @@ pub fn WebGPURenderer::from_xlib(
   )
   let bgl = bglb.finish(device)
   let pipeline = create_basic_pipeline(device, format, bgl)
+  let lit_pipeline = create_lit_pipeline(device, format, bgl)
   let r : WebGPURenderer = {
     instance,
     adapter,
@@ -74,6 +78,7 @@ pub fn WebGPURenderer::from_xlib(
     surface,
     format,
     pipeline_basic: pipeline,
+    pipeline_lit: lit_pipeline,
     bgl,
     width,
     height,
@@ -119,7 +124,7 @@ pub fn WebGPURenderer::resize(
   self.rebuild_depth()
 }
 
-///| geometry 变更后清缓存(节点 id)
+///| geometry/材质变更后清缓存(节点 id;材质 kind 变更同样需失效重建)
 pub fn WebGPURenderer::invalidate_mesh(
   self : WebGPURenderer,
   node_id : UInt64,
@@ -127,7 +132,8 @@ pub fn WebGPURenderer::invalidate_mesh(
   ignore(self.mesh_cache.remove(node_id))
 }
 
-///| 取或建 mesh 的 GPU 资源
+///| 取或建 mesh 的 GPU 资源:lit 材质且几何带法线 → 追加法线缓冲与
+///| 光照尺寸 uniform;否则走 Basic 布局(缺法线的 lit 材质降级 Basic)
 fn WebGPURenderer::ensure_gpu_mesh(
   self : WebGPURenderer,
   node : @core.Object3D,
@@ -150,8 +156,21 @@ fn WebGPURenderer::ensure_gpu_mesh(
     usage=@wgpu_mbt.BufferUsage::from_u64(@wgpu_mbt.BUFFER_USAGE_INDEX),
     indices,
   )
+  let lit = m.material.lit() && m.geometry.normals.length() > 0
+  let nbuf = if lit {
+    Some(
+      self.device.create_buffer_init(
+        usage=@wgpu_mbt.BufferUsage::from_u64(
+          @wgpu_mbt.BUFFER_USAGE_VERTEX,
+        ),
+        f32_array_bytes(m.geometry.normals),
+      ),
+    )
+  } else {
+    None
+  }
   let ubuf = self.device.create_buffer(
-    size=uniform_size,
+    size=if lit { lit_uniform_size } else { uniform_size },
     usage=@wgpu_mbt.BufferUsage::from_u64(
       @wgpu_mbt.BUFFER_USAGE_UNIFORM |
       @wgpu_mbt.BUFFER_USAGE_COPY_DST,
@@ -162,6 +181,7 @@ fn WebGPURenderer::ensure_gpu_mesh(
   let bind_group = bgb.finish(self.device, self.bgl)
   let g : GpuMesh = {
     vbuf,
+    nbuf,
     ibuf,
     ubuf,
     bind_group,
@@ -171,7 +191,8 @@ fn WebGPURenderer::ensure_gpu_mesh(
   g
 }
 
-///| 渲染一帧:clear 背景与深度,绘制场景中全部可见 mesh(Basic 管线)
+///| 渲染一帧:clear 背景与深度,按材质分派管线——Lambert/Phong 走光照
+///| 管线(世界空间法线 + SceneLights),Basic 或缺法线的 lit 走纯色管线
 pub fn WebGPURenderer::render(
   self : WebGPURenderer,
   scene : @core.Scene,
@@ -219,17 +240,40 @@ pub fn WebGPURenderer::render(
   for node in nodes {
     let g = self.ensure_gpu_mesh(node)
     let m = node.mesh.unwrap()
-    // uniform:mvp + color(rgba)
-    let ub = uniform_bytes(vp.multiply(node.matrix_world), m.material.color)
-    self.queue.write_buffer(g.ubuf, 0UL, ub)
-    pass.set_pipeline(self.pipeline_basic)
-    pass.set_bind_group0(g.bind_group)
-    pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
-    pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
-    pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)
+    match g.nbuf {
+      Some(nbuf) => {
+        // lit 路径:model 与 normal 矩阵(model 逆转置)入 uniform
+        let model = node.matrix_world
+        let normal_mat = model.invert().transpose()
+        let ub = lit_uniform_bytes(
+          vp.multiply(model),
+          model,
+          normal_mat,
+          camera.obj.world_position(),
+          m.material,
+          scene.lights,
+        )
+        self.queue.write_buffer(g.ubuf, 0UL, ub)
+        pass.set_pipeline(self.pipeline_lit)
+        pass.set_bind_group0(g.bind_group)
+        pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
+        pass.set_vertex_buffer(1U, nbuf, 0UL, nbuf.get_size())
+        pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
+        pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)
+      }
+      None => {
+        // Basic 路径:uniform = mvp + color(rgba)
+        let ub = uniform_bytes(vp.multiply(node.matrix_world), m.material.color)
+        self.queue.write_buffer(g.ubuf, 0UL, ub)
+        pass.set_pipeline(self.pipeline_basic)
+        pass.set_bind_group0(g.bind_group)
+        pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
+        pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
+        pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)
+      }
+    }
   }
   pass.end()
   self.queue.submit_one(encoder.finish())
   let _ = self.surface.present()
 }
-
