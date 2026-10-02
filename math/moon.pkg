@@ -1,2 +1,0 @@
-// three.js math 模块的 MoonBit 迁移:Vector2/3/4、Matrix3/4、
-// Quaternion、Euler、Color。纯 MoonBit 零依赖,单测全覆盖。
