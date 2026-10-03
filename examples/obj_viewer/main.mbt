@@ -107,18 +107,18 @@ fn main raise {
   let ev_down = Ref(0)
   let ev_move = Ref(0)
   let ev_wheel = Ref(0)
-  host.on_mouse_down(fn(e) {
+  window.on_mouse_down(fn(e) {
     ev_down.val = ev_down.val + 1
     println("EVT down #\{ev_down.val} button=\{e.button} at \{e.view_x},\{e.view_y}")
     if e.button == 1 {
       dragging.val = true
       last_x.val = e.view_x
       last_y.val = e.view_y
-      host.set_capture() // 拖出控件范围也持续收到 move/up
+      window.set_capture() // 拖出控件范围也持续收到 move/up
     }
     true
   })
-  host.on_mouse_move(fn(e) {
+  window.on_mouse_move(fn(e) {
     ev_move.val = ev_move.val + 1
     if dragging.val {
       controls.rotate(
@@ -131,19 +131,23 @@ fn main raise {
       last_y.val = e.view_y
     }
   })
-  host.on_mouse_up(fn(_e) {
+  window.on_mouse_up(fn(_e) {
     dragging.val = false
-    host.release_capture()
+    window.release_capture()
     true
   })
-  host.on_capture_lost(fn() { dragging.val = false })
-  // 滚轮:yue 每格 ±1,换算成 three.js 惯例的 ±100 像素 deltaY
-  host.on_wheel(fn(delta_y) {
+  window.on_capture_lost(fn() { dragging.val = false })
+  // 滚轮:yue 每格 ±1,换算成 three.js 惯例的 ±100 像素 deltaY。
+  // 双挂 window+host:容器事件窗口在此场景可能收不到(见 docs/research),
+  // window 级实测可靠;两处不同时触发,无需防重
+  fn on_wheel(delta_y : Double) -> Unit {
     ev_wheel.val = ev_wheel.val + 1
     println("EVT wheel #\{ev_wheel.val} delta=\{delta_y}")
     controls.zoom(delta_y * 100.0)
     controls.update(camera)
-  })
+  }
+  window.on_wheel(on_wheel)
+  host.on_wheel(on_wheel)
   @yue.post_task(fn() {
     let widget = @yue.native_handle_view(host.view)
     let gdkwin = ffi_gtk_widget_get_window(widget)
