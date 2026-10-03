@@ -104,12 +104,7 @@ fn main raise {
   let dragging = Ref(false)
   let last_x = Ref(0.0)
   let last_y = Ref(0.0)
-  let ev_down = Ref(0)
-  let ev_move = Ref(0)
-  let ev_wheel = Ref(0)
   window.on_mouse_down(fn(e) {
-    ev_down.val = ev_down.val + 1
-    println("EVT down #\{ev_down.val} button=\{e.button} at \{e.view_x},\{e.view_y}")
     if e.button == 1 {
       dragging.val = true
       last_x.val = e.view_x
@@ -119,7 +114,6 @@ fn main raise {
     true
   })
   window.on_mouse_move(fn(e) {
-    ev_move.val = ev_move.val + 1
     if dragging.val {
       controls.rotate(
         e.view_x - last_x.val,
@@ -141,8 +135,6 @@ fn main raise {
   // 双挂 window+host:容器事件窗口在此场景可能收不到(见 docs/research),
   // window 级实测可靠;两处不同时触发,无需防重
   fn on_wheel(delta_y : Double) -> Unit {
-    ev_wheel.val = ev_wheel.val + 1
-    println("EVT wheel #\{ev_wheel.val} delta=\{delta_y}")
     controls.zoom(delta_y * 100.0)
     controls.update(camera)
   }
@@ -188,7 +180,7 @@ fn main raise {
   })
   // 冒烟模式:15 秒后正常退出
   @yue.set_timer(15000, fn() {
-    println("obj_viewer: 15s 自动退出(事件统计 down=\{ev_down.val} move=\{ev_move.val} wheel=\{ev_wheel.val})")
+    println("obj_viewer: 15s 自动退出")
     @yue.quit()
     false
   })
