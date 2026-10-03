@@ -4,6 +4,8 @@
 // Phong 立方体 + 方向光,15 秒自动退出。
 
 struct App {
+  // 冒烟模式开关(WINDOW_HOST_AUTOEXIT=1 时 15 秒自动退出,默认常驻关窗退)
+  autoexit : Bool
   mut window : @linux.Window?
   mut renderer : @renderers.WebGPURenderer?
   scene : @core.Scene
@@ -73,8 +75,7 @@ pub impl @linux.ApplicationHandler for App with fn window_event(
               return
             }
           }
-          if self.frame >= 900 {
-            // 15 秒冒烟退出
+          if self.autoexit && self.frame >= 900 {
             println("window_host: 900 帧完成自动退出")
             event_loop.exit()
             return
@@ -110,7 +111,12 @@ fn main raise {
   let camera = @core.PerspectiveCamera::new(60.0, 720.0 / 480.0, 0.1, 100.0)
   camera.look_at(@math3d.Vector3::new(2.2, 1.6, 3.2), @math3d.Vector3::zero())
   let event_loop = @linux.EventLoop::new()
+  let autoexit = match @env.get_env_var("WINDOW_HOST_AUTOEXIT") {
+    Some(v) => v == "1"
+    None => false
+  }
   event_loop.run_app({
+    autoexit,
     window: None,
     renderer: None,
     scene,
