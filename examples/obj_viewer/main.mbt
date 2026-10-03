@@ -85,9 +85,21 @@ fn main raise {
   scene.add(
     @core.Mesh::new(
       report.geometry,
-      @core.Material::basic(@math3d.Color::from_hex("#f59e0b").unwrap()),
+      @core.Material::lambert(
+        @math3d.Color::from_hex("#f59e0b").unwrap(),
+        @math3d.Color::black(),
+      ),
     ),
   )
+  // 灯光:弱环境光 + 方向光,模型查看器应有明暗立体感
+  let ambient = @lights.AmbientLight::new(
+    color=@math3d.Color::from_hex("#404040").unwrap(),
+    intensity=1.0,
+  )
+  @renderers.attach_ambient_light(scene, ambient)
+  let sun = @lights.DirectionalLight::new(intensity=3.0)
+  sun.obj.position = @math3d.Vector3::new(2.5, 3.0, 1.8)
+  @renderers.attach_directional_light(scene, sun)
   let camera = @core.PerspectiveCamera::new(60.0, 720.0 / 480.0, 0.1, 100.0)
   let controls = @controls.OrbitControls::new()
   camera.look_at(@math3d.Vector3::new(2.4, 1.8, 3.0), controls.target)

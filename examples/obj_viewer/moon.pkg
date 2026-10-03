@@ -2,6 +2,7 @@ import {
   "NoahLiu/moonbit-libyue/yue",
   "NoahLiu/three-native/math3d",
   "NoahLiu/three-native/core",
+  "NoahLiu/three-native/lights",
   "NoahLiu/three-native/renderers",
   "NoahLiu/three-native/loaders",
   "NoahLiu/three-native/controls",
