@@ -17,4 +17,5 @@ description = "three.js for MoonBit on WebGPU: scene graph, cameras, lights, mat
 import {
   "Milky2018/wgpu_mbt@0.16.2",
   "NoahLiu/moonbit-libyue@0.5.10",
+  "wzzc-dev/window@0.5.4-0.2.0",
 }
