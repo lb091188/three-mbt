@@ -20,6 +20,7 @@ pub impl @linux.ApplicationHandler for App with fn can_create_surfaces(
 ) {
   let attrs = @win_core.WindowAttributes::default()
     .with_title("three-native × wzzc-dev/window — Phong cube")
+    .with_surface_size(@dpi.PhysicalSize::PhysicalSize(720, 480).into_size())
   let linux_attrs = @linux.WindowAttributesLinux::default().with_app_id(
     "NoahLiu.three-native.window-host",
   )

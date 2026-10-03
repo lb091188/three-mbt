@@ -28,6 +28,8 @@ pub(all) struct WebGPURenderer {
   mut depth_view : @wgpu_mbt.TextureView?
   /// 节点 id → GPU 资源缓存(geometry/材质变更后调 invalidate_mesh)
   mut mesh_cache : @hashmap.HashMap[UInt64, GpuMesh]
+  /// acquire 首败只警告一次
+  mut warned_acquire : Bool
 }
 
 ///| 从 X11 原生句柄创建渲染器(display/xid 由宿主窗口层换算)
@@ -84,6 +86,7 @@ pub fn WebGPURenderer::from_xlib(
     height,
     depth_view: None,
     mesh_cache: @hashmap.HashMap([], capacity=64),
+    warned_acquire: false,
   }
   r.rebuild_depth()
   r
@@ -112,6 +115,7 @@ pub fn WebGPURenderer::resize(
   }
   self.width = width
   self.height = height
+  self.warned_acquire = false
   let _ = self.surface.configure_default(
     self.adapter,
     self.device,
@@ -215,6 +219,12 @@ pub fn WebGPURenderer::render(
   let st = self.surface.get_current_texture()
   if !st.is_success() {
     st.release()
+    if !self.warned_acquire {
+      // 尺寸失配(窗口 resize 后未重配)等会让 acquire 持续 Outdated,
+      // 首次失败打出避免整段静默黑屏难排查
+      println("renderer: acquire 失败 status=\{st.status()}(检查 surface 尺寸与窗口是否一致)")
+      self.warned_acquire = true
+    }
     return
   }
   let tex = st.take_texture()

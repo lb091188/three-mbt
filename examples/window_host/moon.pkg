@@ -5,6 +5,7 @@ import {
   "NoahLiu/three-native/lights",
   "Milky2018/wgpu_mbt",
   "wzzc-dev/window/core" @win_core,
+  "wzzc-dev/window/dpi",
   "wzzc-dev/window/linux",
   "moonbitlang/core/env",
 }
