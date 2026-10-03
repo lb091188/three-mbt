@@ -158,6 +158,11 @@ fn main raise {
         return
       }
     }
+    // resize 接线:窗口尺寸变化时重配 surface 与深度,否则画面消失
+    host.on_size_changed(fn() {
+      let b = host.get_bounds()
+      renderer.resize(b.width.to_uint(), b.height.to_uint())
+    })
     println("obj_viewer: 渲染器就绪,左键拖拽旋转 / 滚轮缩放")
     @yue.set_timer(16, fn() {
       renderer.render(scene, camera) catch {
