@@ -1,0 +1,13 @@
+import {
+  "NoahLiu/moonbit-libyue/yue",
+  "moonbitlang/core/env",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
+  "NoahLiu/three-native/controls",
+  "NoahLiu/three-native/input",
+  "NoahLiu/three-native/renderers",
+  "moonbitlang/core/encoding/utf8",
+  "Milky2018/wgpu_mbt",
+}
+
+pkgtype(kind: "executable")

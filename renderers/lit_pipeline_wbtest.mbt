@@ -1,6 +1,7 @@
 // renderers 包白盒测试:光照 uniform 编码偏移(布局与 lit_wgsl struct 对齐)。
 
-///| 从字节序列按小端读回 f32
+///|
+/// 从字节序列按小端读回 f32
 fn read_f32_at(bs : Bytes, off : Int) -> Double {
   let bits = bs[off].to_uint() |
     (bs[off + 1].to_uint() << 8) |
@@ -9,6 +10,7 @@ fn read_f32_at(bs : Bytes, off : Int) -> Double {
   Float::reinterpret_from_uint(bits).to_double()
 }
 
+///|
 test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
   let identity = @math3d.Matrix4::identity()
   let material = @core.Material::lambert(
@@ -24,9 +26,11 @@ test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
     material,
     @core.SceneLights::empty(),
     None,
+    identity,
+    false,
   )
-  debug_inspect(ub.length() == 512, content="true")
-  debug_inspect(lit_uniform_size == 512UL, content="true")
+  debug_inspect(ub.length() == 592, content="true")
+  debug_inspect(lit_uniform_size == 592UL, content="true")
   // 无雾:雾段启用位(492)为 0
   debug_inspect(read_f32_at(ub, 492) == 0.0, content="true")
   // mvp(0)与 model(64)单位阵:m11=1、m12=0
@@ -45,6 +49,7 @@ test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
   debug_inspect(read_f32_at(ub, 260) == 1.0, content="true")
 }
 
+///|
 test "lit_uniform_bytes:Phong 的 kind=2 与高光参数" {
   let identity = @math3d.Matrix4::identity()
   let material = @core.Material::phong(
@@ -62,6 +67,8 @@ test "lit_uniform_bytes:Phong 的 kind=2 与高光参数" {
     material,
     @core.SceneLights::empty(),
     None,
+    identity,
+    false,
   )
   debug_inspect(read_f32_at(ub, 256) == 48.0, content="true")
   debug_inspect(read_f32_at(ub, 260) == 2.0, content="true")
@@ -81,6 +88,7 @@ test "lit_uniform_bytes:Phong 的 kind=2 与高光参数" {
   )
 }
 
+///|
 test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
   let identity = @math3d.Matrix4::identity()
   let material = @core.Material::lambert(
@@ -96,6 +104,8 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     material,
     @core.SceneLights::empty(),
     None,
+    identity,
+    false,
   )
   // 无灯光:各段启用位(w 分量)皆为 0
   debug_inspect(read_f32_at(empty, 284) == 0.0, content="true")
@@ -111,6 +121,9 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
       direction: @math3d.Vector3::new(0.0, 1.0, 0.0),
       color: @math3d.Color::white(),
       intensity: 3.0,
+      position: @math3d.Vector3::new(0.0, 4.0, 0.0),
+      cast_shadow: false,
+      shadow: @core.DirectionalLightShadow::new(),
     }),
     point: Some({
       position: @math3d.Vector3::new(1.0, 2.0, 3.0),
@@ -133,6 +146,8 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     material,
     lights,
     Some(@core.Fog::exp2(@math3d.Color::new(0.7, 0.75, 0.8), 0.02)),
+    identity,
+    false,
   )
   // 半球光:天色 384(w=启用)、地色 400(f32 往返带容差)
   debug_inspect((read_f32_at(ub, 384) - 0.3).abs() < 0.0001, content="true")
@@ -160,6 +175,7 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
   debug_inspect(read_f32_at(ub, 356) == 2.0, content="true")
 }
 
+///|
 test "write_matrix4:列主序连续写入" {
   let b : FixedArray[Byte] = FixedArray::make(72, b'0')
   let m = @math3d.Matrix4::from_array([
@@ -171,4 +187,115 @@ test "write_matrix4:列主序连续写入" {
   debug_inspect(read_f32_at(bs, 8 + 20) == 2.0, content="true")
   debug_inspect(read_f32_at(bs, 8 + 40) == 3.0, content="true")
   debug_inspect(read_f32_at(bs, 8 + 48) == 4.0, content="true")
+}
+
+///|
+test "lit_uniform_bytes:阴影段 512/576(关闭时不写入,默认零)" {
+  let identity = @math3d.Matrix4::identity()
+  let material = @core.Material::lambert(
+    @math3d.Color::white(),
+    @math3d.Color::black(),
+  )
+  // 方向光 cast_shadow=false:阴影段保持零(512 矩阵与 588 启用位)
+  let no_cast : @core.SceneLights = {
+    ambient: None,
+    directional: Some({
+      direction: @math3d.Vector3::unit_y(),
+      color: @math3d.Color::white(),
+      intensity: 1.0,
+      position: @math3d.Vector3::new(0.0, 10.0, 0.0),
+      cast_shadow: false,
+      shadow: @core.DirectionalLightShadow::new(),
+    }),
+    point: None,
+    hemisphere: None,
+  }
+  let ub0 = lit_uniform_bytes(
+    identity,
+    identity,
+    identity,
+    identity,
+    @math3d.Vector3::zero(),
+    material,
+    no_cast,
+    None,
+    identity,
+    true,
+  )
+  debug_inspect(ub0.length() == 592, content="true")
+  debug_inspect(read_f32_at(ub0, 588) == 0.0, content="true")
+  debug_inspect(read_f32_at(ub0, 512) == 0.0, content="true")
+  // cast_shadow=true 但 mesh receive_shadow=false:同样短路
+  let cast : @core.SceneLights = {
+    ambient: None,
+    directional: Some({
+      direction: @math3d.Vector3::unit_y(),
+      color: @math3d.Color::white(),
+      intensity: 1.0,
+      position: @math3d.Vector3::new(0.0, 10.0, 0.0),
+      cast_shadow: true,
+      shadow: @core.DirectionalLightShadow::new(),
+    }),
+    point: None,
+    hemisphere: None,
+  }
+  let ub1 = lit_uniform_bytes(
+    identity,
+    identity,
+    identity,
+    identity,
+    @math3d.Vector3::zero(),
+    material,
+    cast,
+    None,
+    identity,
+    false,
+  )
+  debug_inspect(read_f32_at(ub1, 588) == 0.0, content="true")
+  // 两者皆真:启用位 1、bias=0(默认)、map_size=512、texel=1/512、矩阵段生效
+  let ub2 = lit_uniform_bytes(
+    identity,
+    identity,
+    identity,
+    identity,
+    @math3d.Vector3::zero(),
+    material,
+    cast,
+    None,
+    identity,
+    true,
+  )
+  debug_inspect(read_f32_at(ub2, 588) == 1.0, content="true")
+  debug_inspect(read_f32_at(ub2, 576) == 0.0, content="true")
+  debug_inspect(read_f32_at(ub2, 580) == 512.0, content="true")
+  debug_inspect(
+    (read_f32_at(ub2, 584) - 1.0 / 512.0).abs() < 0.0000001,
+    content="true",
+  )
+  debug_inspect(read_f32_at(ub2, 512) == 1.0, content="true")
+  // 自定义 bias/map_size 经 shadow 结构体透传
+  let d = cast.directional.unwrap()
+  d.shadow.bias = -0.0005
+  d.shadow.map_size = 1024
+  let ub3 = lit_uniform_bytes(
+    identity,
+    identity,
+    identity,
+    identity,
+    @math3d.Vector3::zero(),
+    material,
+    cast,
+    None,
+    identity,
+    true,
+  )
+  debug_inspect(
+    (read_f32_at(ub3, 576) + 0.0005).abs() < 0.0000001,
+    content="true",
+  )
+  debug_inspect(read_f32_at(ub3, 580) == 1024.0, content="true")
+  debug_inspect(
+    (read_f32_at(ub3, 584) - 1.0 / 1024.0).abs() < 0.0000001,
+    content="true",
+  )
 }

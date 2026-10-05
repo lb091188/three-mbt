@@ -11,7 +11,8 @@
 // 骨骼/动画/蒙皮/多 primitive 超集按需报错或退化(单 primitive 直接挂节点,
 // 多 primitive 退化为子 mesh)。
 
-///| GLB 容器拆包结果(BIN 块以 raw 内绝对偏移记录,免 view 拷贝)
+///|
+/// GLB 容器拆包结果(BIN 块以 raw 内绝对偏移记录,免 view 拷贝)
 struct GlbContainer {
   json : Json
   raw : Bytes
@@ -19,13 +20,17 @@ struct GlbContainer {
   bin_len : Int
 }
 
-///| 小端读 u32
+///|
+/// 小端读 u32
 fn le32(b : Bytes, off : Int) -> Int {
-  (b[off].to_int() & 0xFF) | ((b[off + 1].to_int() & 0xFF) << 8) |
-  ((b[off + 2].to_int() & 0xFF) << 16) | ((b[off + 3].to_int() & 0xFF) << 24)
+  (b[off].to_int() & 0xFF) |
+  ((b[off + 1].to_int() & 0xFF) << 8) |
+  ((b[off + 2].to_int() & 0xFF) << 16) |
+  ((b[off + 3].to_int() & 0xFF) << 24)
 }
 
-///| 拆 GLB 容器:校验 magic/version,收集 JSON 与 BIN 块
+///|
+/// 拆 GLB 容器:校验 magic/version,收集 JSON 与 BIN 块
 fn parse_glb_container(raw : Bytes) -> GlbContainer raise Error {
   if raw.length() < 20 {
     raise Failure("GLB 过短")
@@ -64,17 +69,19 @@ fn parse_glb_container(raw : Bytes) -> GlbContainer raise Error {
     off += 8 + clen
   }
   match json {
-    Some(j) => { json: j, raw, bin_abs, bin_len }
+    Some(j) => { json: j, raw, bin_abs, bin_len, }
     None => raise Failure("GLB 无 JSON 块")
   }
 }
 
-///| 取子键(object);缺失返回 None
+///|
+/// 取子键(object);缺失返回 None
 fn jv(j : Json, key : String) -> Json? {
   j.value(key)
 }
 
-///| 取数字子键(缺失/非数返回默认)
+///|
+/// 取数字子键(缺失/非数返回默认)
 fn jf(j : Json, key : String, default : Double) -> Double {
   match jv(j, key) {
     Some(v) => v.as_number().unwrap_or(default)
@@ -82,7 +89,8 @@ fn jf(j : Json, key : String, default : Double) -> Double {
   }
 }
 
-///| 取整数子键
+///|
+/// 取整数子键
 fn ji(j : Json, key : String) -> Int? {
   match jv(j, key) {
     Some(v) => v.as_number().map(fn(n) { n.to_int() })
@@ -90,19 +98,22 @@ fn ji(j : Json, key : String) -> Int? {
   }
 }
 
-///| accessor 读取上下文(json + 原始字节 + BIN 绝对偏移)
+///|
+/// accessor 读取上下文(json + 原始字节 + BIN 绝对偏移)
 struct AccCtx {
   json : Json
   raw : Bytes
   bin_abs : Int
 }
 
-///| BIN 块内取字节(BIN 相对偏移)
+///|
+/// BIN 块内取字节(BIN 相对偏移)
 fn bin_at(ctx : AccCtx, i : Int) -> Byte {
   ctx.raw[ctx.bin_abs + i]
 }
 
-///| 读 accessor 为 f64 数组(VEC2/VEC3;componentType=5126 float32)
+///|
+/// 读 accessor 为 f64 数组(VEC2/VEC3;componentType=5126 float32)
 fn accessor_f32_array(
   ctx : AccCtx,
   acc_idx : Int,
@@ -136,11 +147,9 @@ fn accessor_f32_array(
   out
 }
 
-///| 读 SCALAR 索引 accessor 为 u32 数组(5123=uint16 / 5125=uint32)
-fn accessor_index_array(
-  ctx : AccCtx,
-  acc_idx : Int,
-) -> Array[UInt] raise Error {
+///|
+/// 读 SCALAR 索引 accessor 为 u32 数组(5123=uint16 / 5125=uint32)
+fn accessor_index_array(ctx : AccCtx, acc_idx : Int) -> Array[UInt] raise Error {
   let accs = ctx.json.value("accessors").unwrap()
   let acc = accs.item(acc_idx).unwrap()
   let count = ji(acc, "count").unwrap()
@@ -170,7 +179,8 @@ fn accessor_index_array(
   out
 }
 
-///| 内嵌图像 → 纹理(images[i].bufferView + mimeType)
+///|
+/// 内嵌图像 → 纹理(images[i].bufferView + mimeType)
 fn load_embedded_texture(
   ctx : AccCtx,
   image_idx : Int,
@@ -185,11 +195,13 @@ fn load_embedded_texture(
     Some(m) => m.as_string().unwrap_or("image/png")
     None => "image/png"
   }
-  let t = (if mime == "image/jpeg" {
+  let t = try {
+    if mime == "image/jpeg" {
       load_texture_jpeg_bytes(data)
     } else {
       load_texture_png_bytes(data)
-    }) catch {
+    }
+  } catch {
     e => raise Failure("内嵌贴图解码失败(\{mime}): \{e}")
   }
   // glTF 默认 wrap=REPEAT(10497)
@@ -198,7 +210,8 @@ fn load_embedded_texture(
   t
 }
 
-///| Double 区间夹取(核心库 Int::clamp 有 Double 版无,自备)
+///|
+/// Double 区间夹取(核心库 Int::clamp 有 Double 版无,自备)
 fn clampd(v : Double, lo : Double, hi : Double) -> Double {
   if v < lo {
     lo
@@ -210,20 +223,35 @@ fn clampd(v : Double, lo : Double, hi : Double) -> Double {
 }
 
 ///| glTF 材质 → three-native 材质:Lambert(基础色 × 顶点色 × 贴图)+
+
 ///| PBR→Phong 降级。
+
 ///|
+
 ///| 降级策略(A3,写给后来人):
+
 ///| - glTF 2.0 默认 metallicFactor=1.0、roughnessFactor=1.0(字段缺省即此值),
+
 ///|   本仓 129 个坦克 GLB 绝大多数不写或写默认值,等效全粗糙无高光。
+
 ///| - 仅当材质带 pbrMetallicRoughness 块 且 roughnessFactor < 0.9 才升 Phong
+
 ///|   (足够光滑才有可见高光);其余(含无 pbr 块、粗糙度 ≥ 0.9)维持 Lambert
+
 ///|   ——避免默认参数模型整体变高光、观感漂移。
+
 ///| - Phong 近似(金属度/粗糙度 → Blinn-Phong 两参数):
+
 ///|     高光灰度 s = clamp(0.04 + 0.96 * metallic, 0, 1)(电介质 F0=0.04 起,
+
 ///|     金属度拉满到 1),specular 取 (s, s, s);
+
 ///|     shininess = clamp((1 - roughness)^2 * 250 + 5, 5, 250)(越光滑越锐)。
+
 ///| - emissiveFactor(材质顶层,默认 [0,0,0])写进 emissive;
-///|   Lambert/Phong 管线 uniform 224 偏移已有写入通道,无需改渲染层。
+
+///|
+///   Lambert/Phong 管线 uniform 224 偏移已有写入通道,无需改渲染层。
 fn build_material(
   ctx : AccCtx,
   mat_idx : Int,
@@ -300,7 +328,11 @@ fn build_material(
         Some(bt) =>
           match ji(bt, "index") {
             Some(tex_idx) => {
-              let tex = ctx.json.value("textures").unwrap().item(tex_idx).unwrap()
+              let tex = ctx.json
+                .value("textures")
+                .unwrap()
+                .item(tex_idx)
+                .unwrap()
               let src = ji(tex, "source").unwrap()
               m.map = Some(load_embedded_texture(ctx, src))
             }
@@ -313,11 +345,12 @@ fn build_material(
   m
 }
 
-///| mesh → 几何(POSITION/NORMAL/COLOR_0/TEXCOORD_0 + 索引)
+///|
+/// mesh → 几何(POSITION/NORMAL/COLOR_0/TEXCOORD_0 + 索引)
 fn build_geometry(
   ctx : AccCtx,
   mesh_idx : Int,
-) -> ((@core.BufferGeometry, Bool, Int?)) raise Error {
+) -> (@core.BufferGeometry, Bool, Int?) raise Error {
   let mesh = ctx.json.value("meshes").unwrap().item(mesh_idx).unwrap()
   let prims = mesh.value("primitives").unwrap().as_array().unwrap_or([])
   if prims.is_empty() {
@@ -325,15 +358,13 @@ fn build_geometry(
   }
   // 游戏 129 模型全是单 primitive;多 primitive 取第一个并记警告
   if prims.length() > 1 {
-    println("gltf: mesh#\{mesh_idx} 多 primitive,取第一个(游戏模型不应出现)")
+    println(
+      "gltf: mesh#\{mesh_idx} 多 primitive,取第一个(游戏模型不应出现)",
+    )
   }
   let p = prims[0]
   let attrs = p.value("attributes").unwrap()
-  let positions = accessor_f32_array(
-      ctx,
-      ji(attrs, "POSITION").unwrap(),
-      3,
-    )
+  let positions = accessor_f32_array(ctx, ji(attrs, "POSITION").unwrap(), 3)
   let normals = match ji(attrs, "NORMAL") {
     Some(i) => accessor_f32_array(ctx, i, 3)
     None => []
@@ -351,21 +382,13 @@ fn build_geometry(
     None => []
   }
   let mat_idx = ji(p, "material")
-  let geo : @core.BufferGeometry = {
-    positions,
-    normals,
-    uvs,
-    colors,
-    indices,
-  }
+  let geo : @core.BufferGeometry = { positions, normals, uvs, colors, indices, }
   (geo, colors.length() > 0, mat_idx)
 }
 
-///| 递归建节点树:TRS/extras/mesh/children
-fn build_node(
-  ctx : AccCtx,
-  node_idx : Int,
-) -> @core.Object3D raise Error {
+///|
+/// 递归建节点树:TRS/extras/mesh/children
+fn build_node(ctx : AccCtx, node_idx : Int) -> @core.Object3D raise Error {
   let node = ctx.json.value("nodes").unwrap().item(node_idx).unwrap()
   let o = @core.Object3D::new()
   o.name = match jv(node, "name") {
@@ -418,7 +441,8 @@ fn build_node(
   match jv(node, "extras") {
     Some(e) =>
       match e.as_object() {
-        Some(m) => for kv in m {
+        Some(m) =>
+          for kv in m {
             let val : String = match kv.1 {
               Number(n, ..) => n.to_string()
               String(s) => s
@@ -448,7 +472,13 @@ fn build_node(
           m
         }
       }
-      o.mesh = Some({ geometry: geo, material: mat })
+      o.mesh = Some({
+        geometry: geo,
+        material: mat,
+        cast_shadow: true,
+        receive_shadow: true,
+        topology: 0,
+      })
     }
     None => ()
   }
@@ -456,7 +486,8 @@ fn build_node(
   match jv(node, "children") {
     Some(cs) =>
       match cs.as_array() {
-        Some(arr) => for c in arr {
+        Some(arr) =>
+          for c in arr {
             let ci = c.as_number().unwrap().to_int()
             let child = build_node(ctx, ci)
             o.add(child)
@@ -468,13 +499,14 @@ fn build_node(
   o
 }
 
-///| 加载 GLB 字节 → 默认场景根节点(节点树 + 网格 + 材质/贴图 + extras)
+///|
+/// 加载 GLB 字节 → 默认场景根节点(节点树 + 网格 + 材质/贴图 + extras)
 pub fn load_glb(raw : Bytes) -> @core.Object3D raise Error {
   let c = parse_glb_container(raw)
   if c.bin_abs < 0 {
     raise Failure("GLB 无 BIN 块(游戏模型应内嵌)")
   }
-  let ctx : AccCtx = { json: c.json, raw: c.raw, bin_abs: c.bin_abs }
+  let ctx : AccCtx = { json: c.json, raw: c.raw, bin_abs: c.bin_abs, }
   let scene_idx = ji(c.json, "scene").unwrap_or(0)
   let scenes = c.json.value("scenes").unwrap()
   let scene = scenes.item(scene_idx).unwrap()
@@ -489,7 +521,8 @@ pub fn load_glb(raw : Bytes) -> @core.Object3D raise Error {
   root
 }
 
-///| 按名查找节点(先序遍历;装配用:turret/gun/muzzle)
+///|
+/// 按名查找节点(先序遍历;装配用:turret/gun/muzzle)
 pub fn find_node_by_name(
   root : @core.Object3D,
   name : String,

@@ -4,7 +4,7 @@
 // pow(dotNH,shininess))、点光 Frostbite 距离衰减 1/max(pow(d,decay),0.01) 且
 // cutoff>0 时再乘 pow2(saturate(1-pow4(d/cutoff)));光色=CPU 侧 color*intensity。
 
-// uniform 布局(368B,偏移与 WGSL struct 逐字段对齐):
+// uniform 布局(592B,偏移与 WGSL struct 逐字段对齐):
 //   0  mvp : mat4x4(裁剪空间变换)
 //   64 model : mat4x4(局部→世界)
 //   128 normal_mat : mat4x4(model 逆转置,取左上 3x3 变换法线)
@@ -25,6 +25,11 @@
 //   416 view : mat4x4(雾深换算)
 //   480 fog_params : vec4(x=density,y=near,z=far,w=0无/1线性/2指数)
 //   496 fog_color : vec4
+//   512 light_matrix : mat4x4(阴影矩阵=正交投影×阴影视图;A5)
+//   576 shadow_params : vec4(x=bias,y=map_size,z=texel=1/map_size,
+//                            w=阴影启用:方向光 cast_shadow 且 mesh receive)
+
+///|
 let lit_wgsl : String = "struct U {\n" +
   "  mvp : mat4x4<f32>,\n" +
   "  model : mat4x4<f32>,\n" +
@@ -46,10 +51,14 @@ let lit_wgsl : String = "struct U {\n" +
   "  view : mat4x4<f32>,\n" +
   "  fog_params : vec4<f32>,\n" +
   "  fog_color : vec4<f32>,\n" +
+  "  light_matrix : mat4x4<f32>,\n" +
+  "  shadow_params : vec4<f32>,\n" +
   "}\n" +
   "@group(0) @binding(0) var<uniform> u : U;\n" +
-"@group(1) @binding(0) var tmap : texture_2d<f32>;\n" +
-"@group(1) @binding(1) var tsamp : sampler;\n" +
+  "@group(1) @binding(0) var tmap : texture_2d<f32>;\n" +
+  "@group(1) @binding(1) var tsamp : sampler;\n" +
+  "@group(2) @binding(0) var tshadow : texture_depth_2d;\n" +
+  "@group(2) @binding(1) var scompare : sampler_comparison;\n" +
   "const RECIPROCAL_PI : f32 = 0.3183098861837907;\n" +
   "fn f_schlick(f0 : vec3<f32>, dot_vh : f32) -> vec3<f32> {\n" +
   "  let fresnel = exp2((-5.55473 * dot_vh - 6.98316) * dot_vh);\n" +
@@ -72,6 +81,22 @@ let lit_wgsl : String = "struct U {\n" +
   "    falloff = falloff * s * s;\n" +
   "  }\n" +
   "  return falloff;\n" +
+  "}\n" +
+  "// A5 方向光阴影:PCF 2x2(四次 texel 偏移硬比较取均值)。uv 由阴影矩阵\n" +
+  "// 裁剪坐标映射——WebGPU 帧缓冲 y 向下,v 取 0.5-0.5*y;出界不遮挡。\n" +
+  "// 禁用(shadow_params.w=0)直接返 1,不触碰绑定纹理。\n" +
+  "fn get_shadow(world_pos : vec3<f32>) -> f32 {\n" +
+  "  if (u.shadow_params.w < 0.5) { return 1.0; }\n" +
+  "  let sp = u.light_matrix * vec4<f32>(world_pos, 1.0);\n" +
+  "  let uv = vec2<f32>(0.5 + 0.5 * sp.x / sp.w, 0.5 - 0.5 * sp.y / sp.w);\n" +
+  "  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { return 1.0; }\n" +
+  "  let refd = sp.z / sp.w - u.shadow_params.x;\n" +
+  "  let t = u.shadow_params.z;\n" +
+  "  var s = textureSampleCompare(tshadow, scompare, uv + vec2<f32>(-t, -t), refd);\n" +
+  "  s = s + textureSampleCompare(tshadow, scompare, uv + vec2<f32>(t, -t), refd);\n" +
+  "  s = s + textureSampleCompare(tshadow, scompare, uv + vec2<f32>(-t, t), refd);\n" +
+  "  s = s + textureSampleCompare(tshadow, scompare, uv + vec2<f32>(t, t), refd);\n" +
+  "  return s * 0.25;\n" +
   "}\n" +
   "struct VSOut {\n" +
   "  @builtin(position) pos : vec4<f32>,\n" +
@@ -111,8 +136,11 @@ let lit_wgsl : String = "struct U {\n" +
   "  let is_phong = u.mat_params.y > 1.5;\n" +
   "  let shininess = u.mat_params.x;\n" +
   "  if (u.dir_dir.w > 0.5) {\n" +
+  "    // 直照光受阴影遮蔽(three.js 直照光 color *= getShadow 同语义;\n" +
+  "    // 环境光/半球光/点光不受此阴影)\n" +
+  "    let shadow_f = get_shadow(in.world_pos);\n" +
   "    let l = normalize(u.dir_dir.xyz);\n" +
-  "    let irradiance = clamp(dot(n, l), 0.0, 1.0) * u.dir_color.xyz;\n" +
+  "    let irradiance = clamp(dot(n, l), 0.0, 1.0) * u.dir_color.xyz * shadow_f;\n" +
   "    diffuse_irradiance = diffuse_irradiance + irradiance;\n" +
   "    if (is_phong) {\n" +
   "      specular_sum = specular_sum + irradiance *\n" +
@@ -132,29 +160,38 @@ let lit_wgsl : String = "struct U {\n" +
   "    }\n" +
   "  }\n" +
   "  var base_color = u.color.xyz * in.vcolor;\n" +
-"  let uv2 = in.uv * u.uv_tr.xy + u.uv_tr.zw;\n" +
-"  let ts = textureSample(tmap, tsamp, uv2);\n" +
-"  base_color = base_color * ts.xyz;\n" +
-"  var rgb = u.emissive.xyz + diffuse_irradiance * RECIPROCAL_PI * base_color;\n" +
+  "  let uv2 = in.uv * u.uv_tr.xy + u.uv_tr.zw;\n" +
+  "  let ts = textureSample(tmap, tsamp, uv2);\n" +
+  "  base_color = base_color * ts.xyz;\n" +
+  "  var rgb = u.emissive.xyz + diffuse_irradiance * RECIPROCAL_PI * base_color;\n" +
   "  rgb = rgb + specular_sum;\n" +
   "  return vec4<f32>(rgb, u.color.a);\n" +
   "}\n"
 
-///| 光照 uniform 缓冲大小(4 mat4 + 18 vec4 = 512B;view 用于雾深,雾参数 w=0无/1线性/2指数)
-let lit_uniform_size : UInt64 = 512UL
+///| 光照 uniform 缓冲大小(4 mat4 + 18 vec4 = 512B + 阴影段 80B = 592B;
+
+///|
+/// view 用于雾深,雾参数 w=0无/1线性/2指数,阴影矩阵/参数 A5)
+let lit_uniform_size : UInt64 = 592UL
 
 ///| 创建光照管线(顶点布局:双缓冲——slot0 位置、slot1 法线,各 float32x3 步长 12;
+
 ///| BufferGeometry 的 positions/normals 本就是两个独立数组,直接分 buffer 上传
-///| 免交错重组;layout 与 draw 时 set 的 bind group 同源)
+
+///| 免交错重组;layout 与 draw 时 set 的 bind group 同源。三组布局:
+
+///|
+/// group0 uniform、group1 贴图、group2 阴影贴图+比较采样器 A5)
 fn create_lit_pipeline(
   device : @wgpu_mbt.Device,
   format : @wgpu_mbt.TextureFormat,
   bgl : @wgpu_mbt.BindGroupLayout,
   tex_bgl : @wgpu_mbt.BindGroupLayout,
+  shadow_bgl : @wgpu_mbt.BindGroupLayout,
 ) -> @wgpu_mbt.RenderPipeline raise Error {
   let vs = device.create_shader_module_wgsl(lit_wgsl)
   let fs = device.create_shader_module_wgsl(lit_wgsl)
-  let pl = device.create_pipeline_layout_2(bgl, tex_bgl)
+  let pl = device.create_pipeline_layout_many([bgl, tex_bgl, shadow_bgl])
   let b = @wgpu_mbt.RenderPipelineDescBuilder::new(vs, layout=pl)
   b.set_fragment_module(fs)
   b.set_entry_points("vs_main", "fs_main")
@@ -180,7 +217,12 @@ fn create_lit_pipeline(
   p
 }
 
-///| 光照 uniform 编码:变换矩阵×3 + 相机位置 + 材质 + 场景光源集合
+///| 光照 uniform 编码:变换矩阵×4 + 相机位置 + 材质 + 场景光源集合 + 阴影。
+
+///| shadow_matrix 在方向光 cast_shadow 时为 proj×view(渲染层每帧算一次);
+
+///|
+/// receive_shadow 为本 mesh 的接收开关,两者皆真才写入启用段
 fn lit_uniform_bytes(
   mvp : @math3d.Matrix4,
   model : @math3d.Matrix4,
@@ -190,9 +232,11 @@ fn lit_uniform_bytes(
   material : @core.Material,
   lights : @core.SceneLights,
   fog : @core.Fog?,
+  shadow_matrix : @math3d.Matrix4,
+  receive_shadow : Bool,
 ) -> Bytes {
   // 零初始化:未启用的灯光段保持 0(enable 位与颜色皆零)
-  let b : FixedArray[Byte] = FixedArray::make(512, b'\x00')
+  let b : FixedArray[Byte] = FixedArray::make(592, b'\x00')
   write_matrix4(b, 0, mvp)
   write_matrix4(b, 64, model)
   write_matrix4(b, 128, normal_mat)
@@ -258,8 +302,7 @@ fn lit_uniform_bytes(
   }
   // uv_tr:repeat.xy + offset.xy(无贴图时 1,1,0,0 —— 采样白纹理结果不变)
   let (ru, rv, ou, ov) = match material.map {
-    Some(t) =>
-      (t.repeat.x, t.repeat.y, t.offset.x, t.offset.y)
+    Some(t) => (t.repeat.x, t.repeat.y, t.offset.x, t.offset.y)
     None => (1.0, 1.0, 0.0, 0.0)
   }
   write_f32(b, 368, ru)
@@ -296,10 +339,33 @@ fn lit_uniform_bytes(
     }
     None => ()
   }
+  // 阴影(512/576):矩阵 + x=bias、y=map_size、z=texel、w=启用
+  match lights.directional {
+    Some(d) if d.cast_shadow && receive_shadow => {
+      write_matrix4(b, 512, shadow_matrix)
+      write_f32(b, 576, d.shadow.bias)
+      write_f32(b, 580, Int::to_double(d.shadow.map_size))
+      write_f32(
+        b,
+        584,
+        1.0 /
+        Double::from_int(
+          if d.shadow.map_size < 1 {
+            1
+          } else {
+            d.shadow.map_size
+          },
+        ),
+      )
+      write_f32(b, 588, 1.0)
+    }
+    _ => ()
+  }
   to_bytes(b)
 }
 
-///| 单个 mat4 写入缓冲指定偏移(16 元素连续)
+///|
+/// 单个 mat4 写入缓冲指定偏移(16 元素连续)
 fn write_matrix4(
   buf : FixedArray[Byte],
   off : Int,
@@ -310,7 +376,8 @@ fn write_matrix4(
   }
 }
 
-///| 把环境光挂到场景光源集合(光源移动/变色后需重挂)
+///|
+/// 把环境光挂到场景光源集合(光源移动/变色后需重挂)
 pub fn attach_ambient_light(
   scene : @core.Scene,
   light : @lights.AmbientLight,
@@ -322,7 +389,13 @@ pub fn attach_ambient_light(
 }
 
 ///| 把方向光挂到场景光源集合:入射方向 = 光源位置 - target 位置的归一化
-///|(three.js 方向光 uniform 同式;target 变换后需重挂)
+
+///|(three.js 方向光 uniform 同式;target 变换后需重挂)。阴影参数一并
+
+///| 挂接:position=光源世界位置(阴影相机视点)、cast_shadow 开关与
+
+///|
+/// shadow 结构体引用(后续改 map_size/视锥即时生效,同 three.js 活引用)
 pub fn attach_directional_light(
   scene : @core.Scene,
   light : @lights.DirectionalLight,
@@ -333,10 +406,14 @@ pub fn attach_directional_light(
     direction: from.sub(to).normalize(),
     color: light.color,
     intensity: light.intensity,
+    position: from,
+    cast_shadow: light.cast_shadow,
+    shadow: light.shadow,
   })
 }
 
-///| 把半球光挂到场景光源集合(颜色预乘强度;换色后需重挂)
+///|
+/// 把半球光挂到场景光源集合(颜色预乘强度;换色后需重挂)
 pub fn attach_hemisphere_light(
   scene : @core.Scene,
   light : @lights.HemisphereLight,
@@ -356,7 +433,8 @@ pub fn attach_hemisphere_light(
   })
 }
 
-///| 把点光源挂到场景光源集合(光源移动后需重挂)
+///|
+/// 把点光源挂到场景光源集合(光源移动后需重挂)
 pub fn attach_point_light(
   scene : @core.Scene,
   light : @lights.PointLight,

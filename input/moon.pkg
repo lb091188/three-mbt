@@ -1,0 +1,7 @@
+import {
+  "moonbitlang/core/env",
+}
+
+options(
+  "native-stub": [ "native_x11.c" ],
+)

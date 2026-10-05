@@ -1,0 +1,17 @@
+// A5 方向光阴影验收:地面 + 三个箱子 + bt7.glb 坦克在同一个 X11 窗口里,
+// 半球光 + 方向光(cast_shadow=true, 1024² shadow map, PCF 2x2)。
+// 坦克缓慢自转,240 帧自然退出;第 190 帧全屏截图到 /tmp/shadow_test.png。
+// 资产取自 steel-front 主仓(只读):client/assets/models/bt7.glb。
+
+import {
+  "NoahLiu/moonbit-libyue/yue",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
+  "NoahLiu/three-native/lights",
+  "NoahLiu/three-native/loaders",
+  "NoahLiu/three-native/renderers",
+  "Milky2018/wgpu_mbt",
+  "moonbitlang/core/encoding/utf8",
+}
+
+pkgtype(kind: "executable")

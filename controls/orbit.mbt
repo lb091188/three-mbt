@@ -165,3 +165,8 @@ pub fn OrbitControls::compute_eye(
   self.dolly_scale = 1.0
   self.target.add(new_offset)
 }
+
+///|
+/// 任务侧命名别名:OrbitCamera 即 OrbitControls(绕点环绕 + 滚轮缩放,
+/// three.js OrbitControls/Spherical 同式;宿主喂像素拖拽与滚轮增量)。
+pub type OrbitCamera = OrbitControls

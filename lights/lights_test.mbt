@@ -6,7 +6,10 @@ test "五种光源默认构造:color 白、intensity 1" {
   debug_inspect(ambient.color.equals(@math3d.Color::white()), content="true")
   debug_inspect(ambient.intensity == 1.0, content="true")
   let directional = @lights.DirectionalLight::new()
-  debug_inspect(directional.color.equals(@math3d.Color::white()), content="true")
+  debug_inspect(
+    directional.color.equals(@math3d.Color::white()),
+    content="true",
+  )
   debug_inspect(directional.intensity == 1.0, content="true")
   let point = @lights.PointLight::new()
   debug_inspect(point.color.equals(@math3d.Color::white()), content="true")
@@ -16,7 +19,10 @@ test "五种光源默认构造:color 白、intensity 1" {
   debug_inspect(spot.intensity == 1.0, content="true")
   let hemi = @lights.HemisphereLight::new()
   debug_inspect(hemi.color.equals(@math3d.Color::white()), content="true")
-  debug_inspect(hemi.ground_color.equals(@math3d.Color::white()), content="true")
+  debug_inspect(
+    hemi.ground_color.equals(@math3d.Color::white()),
+    content="true",
+  )
   debug_inspect(hemi.intensity == 1.0, content="true")
 }
 
@@ -48,7 +54,10 @@ test "PointLight 默认 distance=0、decay=2;power 往返" {
   debug_inspect(light.distance == 0.0, content="true")
   debug_inspect(light.decay == 2.0, content="true")
   light.intensity = 2.0
-  debug_inspect((light.power() - 8.0 * @math.PI).abs() < 0.0000001, content="true")
+  debug_inspect(
+    (light.power() - 8.0 * @math.PI).abs() < 0.0000001,
+    content="true",
+  )
   light.set_power(4.0 * @math.PI)
   debug_inspect(light.intensity == 1.0, content="true")
 }
@@ -61,7 +70,10 @@ test "SpotLight 默认 angle=π/3、penumbra=0、decay=2;power 往返" {
   debug_inspect(light.distance == 0.0, content="true")
   debug_inspect(light.decay == 2.0, content="true")
   light.intensity = 3.0
-  debug_inspect((light.power() - 3.0 * @math.PI).abs() < 0.0000001, content="true")
+  debug_inspect(
+    (light.power() - 3.0 * @math.PI).abs() < 0.0000001,
+    content="true",
+  )
   light.set_power(@math.PI)
   debug_inspect(light.intensity == 1.0, content="true")
   let tuned = @lights.SpotLight::new(
@@ -97,14 +109,26 @@ test "DirectionalLight 默认 position=(0,1,0)、target 为原点独立节点" {
 ///|
 test "SpotLight/HemisphereLight 默认 position=(0,1,0)" {
   let spot = @lights.SpotLight::new()
-  debug_inspect(spot.obj.position.equals(@math3d.Vector3::unit_y()), content="true")
+  debug_inspect(
+    spot.obj.position.equals(@math3d.Vector3::unit_y()),
+    content="true",
+  )
   let hemi = @lights.HemisphereLight::new()
-  debug_inspect(hemi.obj.position.equals(@math3d.Vector3::unit_y()), content="true")
+  debug_inspect(
+    hemi.obj.position.equals(@math3d.Vector3::unit_y()),
+    content="true",
+  )
   // PointLight/AmbientLight 默认在原点
   let point = @lights.PointLight::new()
-  debug_inspect(point.obj.position.equals(@math3d.Vector3::zero()), content="true")
+  debug_inspect(
+    point.obj.position.equals(@math3d.Vector3::zero()),
+    content="true",
+  )
   let ambient = @lights.AmbientLight::new()
-  debug_inspect(ambient.obj.position.equals(@math3d.Vector3::zero()), content="true")
+  debug_inspect(
+    ambient.obj.position.equals(@math3d.Vector3::zero()),
+    content="true",
+  )
 }
 
 ///|
@@ -179,4 +203,27 @@ test "光源经 obj 挂入场景并参与世界矩阵" {
     (wp.z - 0.0).abs() < 0.000001,
     content="true",
   )
+}
+
+///|
+test "DirectionalLight 阴影默认(three.js castShadow=false/mapSize=512/视锥±5)+拷贝" {
+  let light = @lights.DirectionalLight::new()
+  debug_inspect(light.cast_shadow, content="false")
+  debug_inspect(light.shadow.map_size == 512, content="true")
+  debug_inspect(light.shadow.bias == 0.0, content="true")
+  debug_inspect(light.shadow.camera.left == -5.0, content="true")
+  debug_inspect(light.shadow.camera.right == 5.0, content="true")
+  debug_inspect(light.shadow.camera.top == 5.0, content="true")
+  debug_inspect(light.shadow.camera.bottom == -5.0, content="true")
+  debug_inspect(light.shadow.camera.near == 0.5, content="true")
+  debug_inspect(light.shadow.camera.far == 500.0, content="true")
+  // 开阴影改参数后 copy_from 随批拷贝
+  light.cast_shadow = true
+  light.shadow.map_size = 1024
+  light.shadow.bias = -0.0005
+  let dst = @lights.DirectionalLight::new()
+  dst.copy_from(light)
+  debug_inspect(dst.cast_shadow, content="true")
+  debug_inspect(dst.shadow.map_size == 1024, content="true")
+  debug_inspect(dst.shadow.bias == -0.0005, content="true")
 }
