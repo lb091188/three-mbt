@@ -6,7 +6,8 @@
 //   - 节点 TRS(实测仅 translation)+ extras(type/wheelR/zone/armor)
 //   - 7 个模型带内嵌贴图(bufferView + mimeType)+ baseColorTexture
 //   - 颜色主力是 COLOR_0 顶点色(迷彩),材质 baseColorFactor 多为白
-// metallic/roughness 忽略(A3 材质分发时降级 Phong 再议);
+// metallic/roughness → Phong 降级(A3 已落,策略见 build_material 头注释);
+// emissiveFactor → 材质自发光。
 // 骨骼/动画/蒙皮/多 primitive 超集按需报错或退化(单 primitive 直接挂节点,
 // 多 primitive 退化为子 mesh)。
 
@@ -197,7 +198,32 @@ fn load_embedded_texture(
   t
 }
 
-///| glTF 材质 → three-native 材质:Lambert(基础色 × 顶点色 × 贴图)
+///| Double 区间夹取(核心库 Int::clamp 有 Double 版无,自备)
+fn clampd(v : Double, lo : Double, hi : Double) -> Double {
+  if v < lo {
+    lo
+  } else if v > hi {
+    hi
+  } else {
+    v
+  }
+}
+
+///| glTF 材质 → three-native 材质:Lambert(基础色 × 顶点色 × 贴图)+
+///| PBR→Phong 降级。
+///|
+///| 降级策略(A3,写给后来人):
+///| - glTF 2.0 默认 metallicFactor=1.0、roughnessFactor=1.0(字段缺省即此值),
+///|   本仓 129 个坦克 GLB 绝大多数不写或写默认值,等效全粗糙无高光。
+///| - 仅当材质带 pbrMetallicRoughness 块 且 roughnessFactor < 0.9 才升 Phong
+///|   (足够光滑才有可见高光);其余(含无 pbr 块、粗糙度 ≥ 0.9)维持 Lambert
+///|   ——避免默认参数模型整体变高光、观感漂移。
+///| - Phong 近似(金属度/粗糙度 → Blinn-Phong 两参数):
+///|     高光灰度 s = clamp(0.04 + 0.96 * metallic, 0, 1)(电介质 F0=0.04 起,
+///|     金属度拉满到 1),specular 取 (s, s, s);
+///|     shininess = clamp((1 - roughness)^2 * 250 + 5, 5, 250)(越光滑越锐)。
+///| - emissiveFactor(材质顶层,默认 [0,0,0])写进 emissive;
+///|   Lambert/Phong 管线 uniform 224 偏移已有写入通道,无需改渲染层。
 fn build_material(
   ctx : AccCtx,
   mat_idx : Int,
@@ -224,10 +250,48 @@ fn build_material(
       }
     None => (1.0, 1.0, 1.0)
   }
-  let m = @core.Material::lambert(
-    @math3d.Color::new(r, g, b),
-    @math3d.Color::black(),
-  )
+  // emissiveFactor → 自发光色(材质顶层字段,glTF 默认黑)
+  let (er, eg, eb) = match jv(mat, "emissiveFactor") {
+    Some(f) => {
+      let a = f.as_array().unwrap_or([])
+      if a.length() >= 3 {
+        (
+          a[0].as_number().unwrap_or(0.0),
+          a[1].as_number().unwrap_or(0.0),
+          a[2].as_number().unwrap_or(0.0),
+        )
+      } else {
+        (0.0, 0.0, 0.0)
+      }
+    }
+    None => (0.0, 0.0, 0.0)
+  }
+  let emissive = @math3d.Color::new(er, eg, eb)
+  let color = @math3d.Color::new(r, g, b)
+  // PBR→Phong 降级判定与参数换算(策略见函数头注释)
+  let m = match pbr {
+    Some(p) => {
+      let metallic = jf(p, "metallicFactor", 1.0)
+      let roughness = jf(p, "roughnessFactor", 1.0)
+      if roughness < 0.9 {
+        let s = clampd(0.04 + 0.96 * metallic, 0.0, 1.0)
+        let shininess = clampd(
+          (1.0 - roughness) * (1.0 - roughness) * 250.0 + 5.0,
+          5.0,
+          250.0,
+        )
+        @core.Material::phong(
+          color,
+          @math3d.Color::new(s, s, s),
+          shininess,
+          emissive,
+        )
+      } else {
+        @core.Material::lambert(color, emissive)
+      }
+    }
+    None => @core.Material::lambert(color, emissive)
+  }
   m.vertex_colors = has_vertex_colors
   // baseColorTexture:{index} → textures[i].source → images[j]
   match pbr {

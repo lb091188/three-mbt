@@ -253,3 +253,123 @@ test "OrthographicCamera 参数变更后 update_projection_matrix 重建" {
     content="true",
   )
 }
+
+///|
+test "heightfield 平坦图: 全部顶点法线朝上, 中心法线 (0,1,0)" {
+  let g = @core.BufferGeometry::heightfield(
+    10.0,
+    10.0,
+    4,
+    4,
+    fn(_i : Int, _j : Int) { 3.0 },
+    2.0,
+  )
+  // 5×5 顶点、4×4×2 三角
+  debug_inspect(g.vertex_count() == 25, content="true")
+  debug_inspect(g.index_count() == 96, content="true")
+  let mut all_up = true
+  for k in 0..<g.vertex_count() {
+    if g.normals[k * 3 + 1] < 0.999999 {
+      all_up = false
+    }
+  }
+  debug_inspect(all_up, content="true")
+  // 中心顶点 (2,2):法线精确 (0,1,0)、高程=采样值 3.0
+  let c = 2 * 5 + 2
+  debug_inspect(g.normals[c * 3].abs() < 0.000001, content="true")
+  debug_inspect((g.normals[c * 3 + 1] - 1.0).abs() < 0.000001, content="true")
+  debug_inspect(g.normals[c * 3 + 2].abs() < 0.000001, content="true")
+  debug_inspect((g.positions[c * 3 + 1] - 3.0).abs() < 0.000001, content="true")
+}
+
+///|
+test "heightfield 四角高程与采样一致, XZ 覆盖 width/depth" {
+  // 斜坡 y = 0.5*i + 0.25*j:i∈[0,8]、j∈[0,6]
+  let g = @core.BufferGeometry::heightfield(
+    20.0,
+    30.0,
+    8,
+    6,
+    fn(i : Int, j : Int) {
+      Double::from_int(i) * 0.5 + Double::from_int(j) * 0.25
+    },
+    4.0,
+  )
+  let nx = 9
+  // 四角顶点 Y == sample(角): (0,0)=0、(8,0)=4、(0,6)=1.5、(8,6)=5.5
+  debug_inspect(g.positions[1].abs() < 0.000001, content="true")
+  debug_inspect((g.positions[(nx - 1) * 3 + 1] - 4.0).abs() < 0.000001, content="true")
+  debug_inspect(
+    (g.positions[6 * nx * 3 + 1] - 1.5).abs() < 0.000001,
+    content="true",
+  )
+  debug_inspect(
+    (g.positions[(6 * nx + 8) * 3 + 1] - 5.5).abs() < 0.000001,
+    content="true",
+  )
+  // X/Z 覆盖 [-10,10]/[-15,15]
+  debug_inspect((g.positions[0] + 10.0).abs() < 0.000001, content="true")
+  debug_inspect(
+    (g.positions[(nx - 1) * 3] - 10.0).abs() < 0.000001,
+    content="true",
+  )
+  debug_inspect((g.positions[2] + 15.0).abs() < 0.000001, content="true")
+  debug_inspect(
+    (g.positions[6 * nx * 3 + 2] - 15.0).abs() < 0.000001,
+    content="true",
+  )
+  // UV = 世界坐标/uv_scale:角 (0,0) = (-2.5, -3.75)
+  debug_inspect((g.uvs[0] + 2.5).abs() < 0.000001, content="true")
+  debug_inspect((g.uvs[1] + 3.75).abs() < 0.000001, content="true")
+}
+
+///|
+test "heightfield 斜坡法线倾斜方向: 斜率 0.5 时法线 ∝ (-0.5,1,0)" {
+  // width=8、segs=4 → dx=2;i*1.0 → 每 i 升 1,斜率 0.5
+  let g = @core.BufferGeometry::heightfield(
+    8.0,
+    8.0,
+    4,
+    4,
+    fn(i : Int, _j : Int) { Double::from_int(i) },
+    2.0,
+  )
+  let c = 2 * 5 + 2 // 中心顶点,远离边界半权差异
+  let n = @math3d.Vector3::new(
+    g.normals[c * 3],
+    g.normals[c * 3 + 1],
+    g.normals[c * 3 + 2],
+  )
+  let want = @math3d.Vector3::new(-0.5, 1.0, 0.0).normalize()
+  debug_inspect(n.dot(want) > 0.999999, content="true")
+}
+
+///|
+test "heightfield 绕序朝上: CCW 三角面法线 +Y" {
+  let g = @core.BufferGeometry::heightfield(
+    8.0,
+    8.0,
+    4,
+    4,
+    fn(_i : Int, _j : Int) { 1.0 },
+    2.0,
+  )
+  // 首个三角 (v00,v01,v10):e1=(0,0,2) e2=(2,0,0),叉积 y=4>0 → 朝上
+  let a = @math3d.Vector3::new(
+    g.positions[g.indices[0].to_int() * 3],
+    g.positions[g.indices[0].to_int() * 3 + 1],
+    g.positions[g.indices[0].to_int() * 3 + 2],
+  )
+  let b = @math3d.Vector3::new(
+    g.positions[g.indices[1].to_int() * 3],
+    g.positions[g.indices[1].to_int() * 3 + 1],
+    g.positions[g.indices[1].to_int() * 3 + 2],
+  )
+  let c = @math3d.Vector3::new(
+    g.positions[g.indices[2].to_int() * 3],
+    g.positions[g.indices[2].to_int() * 3 + 1],
+    g.positions[g.indices[2].to_int() * 3 + 2],
+  )
+  let n = b.sub(a).cross(c.sub(a))
+  debug_inspect(n.y > 3.999, content="true")
+}

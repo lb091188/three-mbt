@@ -20,4 +20,5 @@ import {
   "NoahLiu/moonbit-libyue@0.5.10",
   "wzzc-dev/window@0.5.4-0.2.0",
   "moonbitlang/async@0.22.4",
+  "mizchi/zlib@0.4.10",
 }
