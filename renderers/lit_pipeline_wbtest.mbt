@@ -23,8 +23,8 @@ test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
     material,
     @core.SceneLights::empty(),
   )
-  debug_inspect(ub.length() == 384, content="true")
-  debug_inspect(lit_uniform_size == 384UL, content="true")
+  debug_inspect(ub.length() == 416, content="true")
+  debug_inspect(lit_uniform_size == 416UL, content="true")
   // mvp(0)与 model(64)单位阵:m11=1、m12=0
   debug_inspect(read_f32_at(ub, 0) == 1.0, content="true")
   debug_inspect(read_f32_at(ub, 4) == 0.0, content="true")
@@ -89,10 +89,11 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     material,
     @core.SceneLights::empty(),
   )
-  // 无灯光:三段启用位(w 分量)皆为 0
+  // 无灯光:各段启用位(w 分量)皆为 0
   debug_inspect(read_f32_at(empty, 284) == 0.0, content="true")
   debug_inspect(read_f32_at(empty, 300) == 0.0, content="true")
   debug_inspect(read_f32_at(empty, 332) == 0.0, content="true")
+  debug_inspect(read_f32_at(empty, 396) == 0.0, content="true")
   let lights : @core.SceneLights = {
     ambient: Some({
       color: @math3d.Color::new(0.25, 0.5, 0.75),
@@ -110,6 +111,10 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
       distance: 10.0,
       decay: 2.0,
     }),
+    hemisphere: Some({
+      sky_color: @math3d.Color::new(0.3, 0.6, 1.2),
+      ground_color: @math3d.Color::new(0.2, 0.2, 0.1),
+    }),
   }
   let ub = lit_uniform_bytes(
     identity,
@@ -119,6 +124,11 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     material,
     lights,
   )
+  // 半球光:天色 384(w=启用)、地色 400(f32 往返带容差)
+  debug_inspect((read_f32_at(ub, 384) - 0.3).abs() < 0.0001, content="true")
+  debug_inspect((read_f32_at(ub, 388) - 0.6).abs() < 0.0001, content="true")
+  debug_inspect(read_f32_at(ub, 396) == 1.0, content="true")
+  debug_inspect((read_f32_at(ub, 400) - 0.2).abs() < 0.0001, content="true")
   // 环境光偏移 272:rgb=color*intensity,w=启用
   debug_inspect(read_f32_at(ub, 272) == 0.5, content="true")
   debug_inspect(read_f32_at(ub, 276) == 1.0, content="true")

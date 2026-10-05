@@ -40,11 +40,22 @@ pub(all) struct SceneLights {
   mut directional : SceneDirectionalLight?
   /// 点光源(None=无点光)
   mut point : ScenePointLight?
+  /// 半球光(None=无;天空/地面双色按法线混合,A4)
+  mut hemisphere : SceneHemisphereLight?
+}
+
+///| 半球光的世界空间参数(three.js HemisphereLight 照明约定:
+///| 上半球天空色、下半球地面色,按世界法线 y 分量混合)
+pub(all) struct SceneHemisphereLight {
+  /// 天空色(含强度预乘)
+  mut sky_color : @math3d.Color
+  /// 地面色(含强度预乘)
+  mut ground_color : @math3d.Color
 }
 
 ///| 构造空光源集合
 pub fn SceneLights::empty() -> SceneLights {
-  { ambient: None, directional: None, point: None }
+  { ambient: None, directional: None, point: None, hemisphere: None }
 }
 
 ///| 场景

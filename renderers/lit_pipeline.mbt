@@ -20,6 +20,8 @@
 //   336 point_color : vec4(rgb=光色*强度)
 //   352 point_params : vec4(x=distance,y=decay)
 //   368 uv_tr : vec4(xy=repeat,zw=offset;A1 纹理管线)
+//   384 hemi_sky : vec4(rgb=天色*强度,w=启用)
+//   400 hemi_ground : vec4(rgb=地色*强度)
 let lit_wgsl : String = "struct U {\n" +
   "  mvp : mat4x4<f32>,\n" +
   "  model : mat4x4<f32>,\n" +
@@ -36,6 +38,8 @@ let lit_wgsl : String = "struct U {\n" +
   "  point_color : vec4<f32>,\n" +
   "  point_params : vec4<f32>,\n" +
   "  uv_tr : vec4<f32>,\n" +
+  "  hemi_sky : vec4<f32>,\n" +
+  "  hemi_ground : vec4<f32>,\n" +
   "}\n" +
   "@group(0) @binding(0) var<uniform> u : U;\n" +
 "@group(1) @binding(0) var tmap : texture_2d<f32>;\n" +
@@ -88,6 +92,12 @@ let lit_wgsl : String = "struct U {\n" +
   "  let n = normalize(in.world_normal);\n" +
   "  let v = normalize(u.cam_pos.xyz - in.world_pos);\n" +
   "  var diffuse_irradiance = u.ambient.xyz;\n" +
+  "  // 半球光:世界法线 y 分量在地/天色间混合(n.y∈[-1,1] → mix [0,1])\n" +
+  "  if (u.hemi_sky.w > 0.5) {\n" +
+  "    let h = clamp(0.5 + 0.5 * n.y, 0.0, 1.0);\n" +
+  "    diffuse_irradiance = diffuse_irradiance +\n" +
+  "      mix(u.hemi_ground.xyz, u.hemi_sky.xyz, vec3<f32>(h));\n" +
+  "  }\n" +
   "  var specular_sum = vec3<f32>(0.0);\n" +
   "  let is_phong = u.mat_params.y > 1.5;\n" +
   "  let shininess = u.mat_params.x;\n" +
@@ -121,8 +131,8 @@ let lit_wgsl : String = "struct U {\n" +
   "  return vec4<f32>(rgb, u.color.a);\n" +
   "}\n"
 
-///| 光照 uniform 缓冲大小(3 mat4 + 14 vec4 = 384B;末位 uv_tr = repeat.xy+offset.xy)
-let lit_uniform_size : UInt64 = 384UL
+///| 光照 uniform 缓冲大小(3 mat4 + 16 vec4 = 416B;末两 vec4 为半球光天/地色,w=启用)
+let lit_uniform_size : UInt64 = 416UL
 
 ///| 创建光照管线(顶点布局:双缓冲——slot0 位置、slot1 法线,各 float32x3 步长 12;
 ///| BufferGeometry 的 positions/normals 本就是两个独立数组,直接分 buffer 上传
@@ -171,7 +181,7 @@ fn lit_uniform_bytes(
   lights : @core.SceneLights,
 ) -> Bytes {
   // 零初始化:未启用的灯光段保持 0(enable 位与颜色皆零)
-  let b : FixedArray[Byte] = FixedArray::make(384, b'\x00')
+  let b : FixedArray[Byte] = FixedArray::make(416, b'\x00')
   write_matrix4(b, 0, mvp)
   write_matrix4(b, 64, model)
   write_matrix4(b, 128, normal_mat)
@@ -244,6 +254,20 @@ fn lit_uniform_bytes(
   write_f32(b, 372, rv)
   write_f32(b, 376, ou)
   write_f32(b, 380, ov)
+  // 半球光(384/400:w=启用位;颜色预乘强度)
+  match lights.hemisphere {
+    Some(h) => {
+      write_f32(b, 384, h.sky_color.r)
+      write_f32(b, 388, h.sky_color.g)
+      write_f32(b, 392, h.sky_color.b)
+      write_f32(b, 396, 1.0)
+      write_f32(b, 400, h.ground_color.r)
+      write_f32(b, 404, h.ground_color.g)
+      write_f32(b, 408, h.ground_color.b)
+      write_f32(b, 412, 0.0)
+    }
+    None => ()
+  }
   to_bytes(b)
 }
 
@@ -281,6 +305,26 @@ pub fn attach_directional_light(
     direction: from.sub(to).normalize(),
     color: light.color,
     intensity: light.intensity,
+  })
+}
+
+///| 把半球光挂到场景光源集合(颜色预乘强度;换色后需重挂)
+pub fn attach_hemisphere_light(
+  scene : @core.Scene,
+  light : @lights.HemisphereLight,
+) -> Unit {
+  let i = light.intensity
+  scene.lights.hemisphere = Some({
+    sky_color: @math3d.Color::new(
+      light.color.r * i,
+      light.color.g * i,
+      light.color.b * i,
+    ),
+    ground_color: @math3d.Color::new(
+      light.ground_color.r * i,
+      light.ground_color.g * i,
+      light.ground_color.b * i,
+    ),
   })
 }
 
