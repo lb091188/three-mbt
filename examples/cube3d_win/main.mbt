@@ -6,20 +6,25 @@
 // libyue 0.5.10 之后新增的 native_handle_window,注册版包即可跑)。
 
 ///| Win32:按窗口标题找顶层窗口(ANSI 版;标题须纯 ASCII,参数带 NUL)
+#cfg(platform="windows")
 #borrow(title)
 extern "c" fn win32_find_window_a(cls : UInt64, title : Bytes) -> UInt64 = "FindWindowA"
 
 // 直接文件日志(fopen/fputs/fflush):moon 原生 stdout 在重定向下全缓冲,
 // 崩溃即丢;证据链(V4/V5)与崩溃定位都要每行落盘。
+#cfg(platform="windows")
 #borrow(path, mode)
 extern "c" fn c_fopen(path : Bytes, mode : Bytes) -> UInt64 = "fopen"
 
+#cfg(platform="windows")
 #borrow(s)
 extern "c" fn c_fputs(s : Bytes, f : UInt64) -> Int = "fputs"
 
+#cfg(platform="windows")
 extern "c" fn c_fflush(f : UInt64) -> Int = "fflush"
 
 ///| 追加一行日志到 cube3d_win.log(工作目录),立即落盘
+#cfg(platform="windows")
 fn logln(s : String) -> Unit {
   let line : Bytes = @utf8.encode(s) + b"\n\x00"
   let f = c_fopen(
@@ -32,6 +37,7 @@ fn logln(s : String) -> Unit {
   }
 }
 
+#cfg(platform="windows")
 fn main raise {
   if !@yue.initialize() {
     logln("cube3d_win: yue init 失败")

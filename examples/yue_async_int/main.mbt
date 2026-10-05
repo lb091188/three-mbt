@@ -5,20 +5,26 @@
 // 验证目标:①async 定时器/网络任务在 GUI 存活期间推进;②yue 鼠标事件
 // 在 poll 泵期间到达;③干净退出。证据走文件日志(每行 fflush)。
 
+#cfg(platform="windows")
 extern "c" fn c_poll(t : Int) -> Unit = "yue_async_int_poll"
 
+#cfg(platform="windows")
 extern "c" fn c_wake() -> Unit = "yue_async_int_wake"
 
+#cfg(platform="windows")
 #borrow(path)
 #borrow(mode)
 extern "c" fn c_fopen(path : Bytes, mode : Bytes) -> UInt64 = "fopen"
 
+#cfg(platform="windows")
 #borrow(s)
 extern "c" fn c_fputs(s : Bytes, f : UInt64) -> Int = "fputs"
 
+#cfg(platform="windows")
 extern "c" fn c_fflush(f : UInt64) -> Int = "fflush"
 
 ///| 文件日志(yue-int.log,工作目录),立即落盘
+#cfg(platform="windows")
 fn logln(s : String) -> Unit {
   let line : Bytes = @utf8.encode(s) + b"\n\x00"
   let f = c_fopen(
@@ -32,19 +38,23 @@ fn logln(s : String) -> Unit {
 }
 
 ///|
+#cfg(platform="windows")
 pub fn YueLoop::make() -> YueLoop {
   { dummy: () }
 }
 
 ///|
+#cfg(platform="windows")
 struct YueLoop {
   dummy : Unit
 }
 
 ///|
+#cfg(platform="windows")
 using @external_loop_integration {trait ExternalEventLoop}
 
 ///|
+#cfg(platform="windows")
 pub impl ExternalEventLoop for YueLoop with fn get_wakeup_callback_for_foreign_thread(
   _self,
 ) {
@@ -52,6 +62,7 @@ pub impl ExternalEventLoop for YueLoop with fn get_wakeup_callback_for_foreign_t
 }
 
 ///|
+#cfg(platform="windows")
 pub impl ExternalEventLoop for YueLoop with fn poll(_self, timeout?) {
   let t = match timeout {
     Some(v) => v
@@ -61,11 +72,13 @@ pub impl ExternalEventLoop for YueLoop with fn poll(_self, timeout?) {
 }
 
 ///|
+#cfg(platform="windows")
 pub impl ExternalEventLoop for YueLoop with fn terminate(_self) {
   logln("loop: terminate")
 }
 
 ///| 共享状态:async 任务与 yue 回调同在主线程,直接读写
+#cfg(platform="windows")
 struct App {
   clicks : Ref[Int]
   ticks : Ref[Int]
@@ -74,6 +87,7 @@ struct App {
 }
 
 ///|
+#cfg(platform="windows")
 let app : App = {
   clicks: Ref(0),
   ticks: Ref(0),
@@ -82,9 +96,11 @@ let app : App = {
 }
 
 ///|
+#cfg(platform="windows")
 let label : Ref[@yue.Label?] = Ref(None)
 
 ///|
+#cfg(platform="windows")
 fn refresh_label() -> Unit {
   match label.val {
     Some(l) => {
@@ -95,6 +111,7 @@ fn refresh_label() -> Unit {
 }
 
 ///|
+#cfg(platform="windows")
 async fn main {
   logln("=== yue-async integration start ===")
   if !@yue.initialize() {

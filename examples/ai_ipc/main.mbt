@@ -4,20 +4,25 @@
 //    60 次决策往返(33ms 节奏),测 RTT —— D4 多进程方案的时延 datum。
 // 子进程回包按管道 FIFO 顺序对齐发送序,游标即 id。
 
+#cfg(platform="windows")
 extern "c" fn c_fflush(f : UInt64) -> Int = "fflush"
 
+#cfg(platform="windows")
 fn outln(s : String) -> Unit {
   println(s)
   ignore(c_fflush(0))
 }
 
+#cfg(platform="windows")
 extern "c" fn c_GetTickCount() -> UInt64 = "GetTickCount"
 
+#cfg(platform="windows")
 fn now_ms() -> Int64 {
   c_GetTickCount().reinterpret_as_int64()
 }
 
 ///| 造一条 AI 快照 JSON(id,x,y,8 个敌人)
+#cfg(platform="windows")
 fn snapshot(id : Int) -> String {
   let buf = StringBuilder()
   buf.write_string("{\"id\":\{id},\"x\":100.0,\"y\":200.0,\"enemies\":[")
@@ -33,6 +38,7 @@ fn snapshot(id : Int) -> String {
   buf.to_string()
 }
 
+#cfg(platform="windows")
 async fn main {
   // ---- B:collect_output 冒烟 ----
   let (code, out, _err) = @process.collect_output(
