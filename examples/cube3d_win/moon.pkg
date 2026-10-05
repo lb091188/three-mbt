@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/encoding/utf8",
+  "NoahLiu/moonbit-libyue/yue",
+  "NoahLiu/three-native/math3d",
+  "NoahLiu/three-native/core",
+  "NoahLiu/three-native/renderers",
+  "Milky2018/wgpu_mbt",
+}
+
+options("is-main": true)
