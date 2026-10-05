@@ -3,4 +3,5 @@ _build/
 target/
 target
 .mooncakes/
-.moonagent/
+.moonagent/WebView2Loader.dll
+*.log

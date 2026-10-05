@@ -1,0 +1,14 @@
+import {
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/async",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/external_loop_integration",
+  "NoahLiu/moonbit-libyue/yue",
+}
+
+supported_targets = "+native"
+
+options(
+  "is-main": true,
+  "native-stub": ["loop.c"],
+)
