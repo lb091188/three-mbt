@@ -19,12 +19,16 @@ test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
     identity,
     identity,
     identity,
+    identity,
     @math3d.Vector3::new(1.0, 2.0, 3.0),
     material,
     @core.SceneLights::empty(),
+    None,
   )
-  debug_inspect(ub.length() == 416, content="true")
-  debug_inspect(lit_uniform_size == 416UL, content="true")
+  debug_inspect(ub.length() == 512, content="true")
+  debug_inspect(lit_uniform_size == 512UL, content="true")
+  // 无雾:雾段启用位(492)为 0
+  debug_inspect(read_f32_at(ub, 492) == 0.0, content="true")
   // mvp(0)与 model(64)单位阵:m11=1、m12=0
   debug_inspect(read_f32_at(ub, 0) == 1.0, content="true")
   debug_inspect(read_f32_at(ub, 4) == 0.0, content="true")
@@ -53,9 +57,11 @@ test "lit_uniform_bytes:Phong 的 kind=2 与高光参数" {
     identity,
     identity,
     identity,
+    identity,
     @math3d.Vector3::zero(),
     material,
     @core.SceneLights::empty(),
+    None,
   )
   debug_inspect(read_f32_at(ub, 256) == 48.0, content="true")
   debug_inspect(read_f32_at(ub, 260) == 2.0, content="true")
@@ -85,9 +91,11 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     identity,
     identity,
     identity,
+    identity,
     @math3d.Vector3::zero(),
     material,
     @core.SceneLights::empty(),
+    None,
   )
   // 无灯光:各段启用位(w 分量)皆为 0
   debug_inspect(read_f32_at(empty, 284) == 0.0, content="true")
@@ -120,15 +128,21 @@ test "lit_uniform_bytes:灯光段偏移、强度乘法与启用位" {
     identity,
     identity,
     identity,
+    identity,
     @math3d.Vector3::zero(),
     material,
     lights,
+    Some(@core.Fog::exp2(@math3d.Color::new(0.7, 0.75, 0.8), 0.02)),
   )
   // 半球光:天色 384(w=启用)、地色 400(f32 往返带容差)
   debug_inspect((read_f32_at(ub, 384) - 0.3).abs() < 0.0001, content="true")
   debug_inspect((read_f32_at(ub, 388) - 0.6).abs() < 0.0001, content="true")
   debug_inspect(read_f32_at(ub, 396) == 1.0, content="true")
   debug_inspect((read_f32_at(ub, 400) - 0.2).abs() < 0.0001, content="true")
+  // 雾:density=480(0.02)、kind w=492(2=指数)、颜色 496
+  debug_inspect((read_f32_at(ub, 480) - 0.02).abs() < 0.0001, content="true")
+  debug_inspect(read_f32_at(ub, 492) == 2.0, content="true")
+  debug_inspect((read_f32_at(ub, 496) - 0.7).abs() < 0.0001, content="true")
   // 环境光偏移 272:rgb=color*intensity,w=启用
   debug_inspect(read_f32_at(ub, 272) == 0.5, content="true")
   debug_inspect(read_f32_at(ub, 276) == 1.0, content="true")

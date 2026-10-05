@@ -310,9 +310,11 @@ pub fn WebGPURenderer::render(
           vp.multiply(model),
           model,
           normal_mat,
+          camera.view_matrix(),
           camera.obj.world_position(),
           m.material,
           scene.lights,
+          scene.fog,
         )
         self.queue.write_buffer(g.ubuf, 0UL, ub)
         pass.set_pipeline(self.pipeline_lit)

@@ -22,6 +22,9 @@
 //   368 uv_tr : vec4(xy=repeat,zw=offset;A1 纹理管线)
 //   384 hemi_sky : vec4(rgb=天色*强度,w=启用)
 //   400 hemi_ground : vec4(rgb=地色*强度)
+//   416 view : mat4x4(雾深换算)
+//   480 fog_params : vec4(x=density,y=near,z=far,w=0无/1线性/2指数)
+//   496 fog_color : vec4
 let lit_wgsl : String = "struct U {\n" +
   "  mvp : mat4x4<f32>,\n" +
   "  model : mat4x4<f32>,\n" +
@@ -40,6 +43,9 @@ let lit_wgsl : String = "struct U {\n" +
   "  uv_tr : vec4<f32>,\n" +
   "  hemi_sky : vec4<f32>,\n" +
   "  hemi_ground : vec4<f32>,\n" +
+  "  view : mat4x4<f32>,\n" +
+  "  fog_params : vec4<f32>,\n" +
+  "  fog_color : vec4<f32>,\n" +
   "}\n" +
   "@group(0) @binding(0) var<uniform> u : U;\n" +
 "@group(1) @binding(0) var tmap : texture_2d<f32>;\n" +
@@ -73,6 +79,7 @@ let lit_wgsl : String = "struct U {\n" +
   "  @location(1) world_normal : vec3<f32>,\n" +
   "  @location(2) uv : vec2<f32>,\n" +
   "  @location(3) vcolor : vec3<f32>,\n" +
+  "  @location(4) fog_depth : f32,\n" +
   "}\n" +
   "@vertex fn vs_main(@location(0) obj_pos : vec3<f32>,\n" +
   "    @location(1) obj_normal : vec3<f32>,\n" +
@@ -86,6 +93,8 @@ let lit_wgsl : String = "struct U {\n" +
   "  o.world_normal = nm * obj_normal;\n" +
   "  o.uv = obj_uv;\n" +
   "  o.vcolor = obj_color;\n" +
+  "  let wp = u.model * vec4<f32>(obj_pos, 1.0);\n" +
+  "  o.fog_depth = -(u.view * wp).z;\n" +
   "  return o;\n" +
   "}\n" +
   "@fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {\n" +
@@ -131,8 +140,8 @@ let lit_wgsl : String = "struct U {\n" +
   "  return vec4<f32>(rgb, u.color.a);\n" +
   "}\n"
 
-///| 光照 uniform 缓冲大小(3 mat4 + 16 vec4 = 416B;末两 vec4 为半球光天/地色,w=启用)
-let lit_uniform_size : UInt64 = 416UL
+///| 光照 uniform 缓冲大小(4 mat4 + 18 vec4 = 512B;view 用于雾深,雾参数 w=0无/1线性/2指数)
+let lit_uniform_size : UInt64 = 512UL
 
 ///| 创建光照管线(顶点布局:双缓冲——slot0 位置、slot1 法线,各 float32x3 步长 12;
 ///| BufferGeometry 的 positions/normals 本就是两个独立数组,直接分 buffer 上传
@@ -176,12 +185,14 @@ fn lit_uniform_bytes(
   mvp : @math3d.Matrix4,
   model : @math3d.Matrix4,
   normal_mat : @math3d.Matrix4,
+  view : @math3d.Matrix4,
   cam_pos : @math3d.Vector3,
   material : @core.Material,
   lights : @core.SceneLights,
+  fog : @core.Fog?,
 ) -> Bytes {
   // 零初始化:未启用的灯光段保持 0(enable 位与颜色皆零)
-  let b : FixedArray[Byte] = FixedArray::make(416, b'\x00')
+  let b : FixedArray[Byte] = FixedArray::make(512, b'\x00')
   write_matrix4(b, 0, mvp)
   write_matrix4(b, 64, model)
   write_matrix4(b, 128, normal_mat)
@@ -203,7 +214,8 @@ fn lit_uniform_bytes(
   write_f32(b, 252, 0.0)
   write_f32(b, 256, material.shininess)
   write_f32(b, 260, Int::to_double(material.kind))
-  write_f32(b, 264, 0.0)
+  // mat_params.z = 材质是否受雾(1/0)
+  write_f32(b, 264, if material.fog { 1.0 } else { 0.0 })
   write_f32(b, 268, 0.0)
   match lights.ambient {
     Some(a) => {
@@ -265,6 +277,22 @@ fn lit_uniform_bytes(
       write_f32(b, 404, h.ground_color.g)
       write_f32(b, 408, h.ground_color.b)
       write_f32(b, 412, 0.0)
+    }
+    None => ()
+  }
+  // view 矩阵(416,雾深换算用)与雾参数(480)/雾色(496)
+  write_matrix4(b, 416, view)
+  match fog {
+    Some(f) => {
+      write_f32(b, 480, f.density)
+      write_f32(b, 484, f.near)
+      write_f32(b, 488, f.far)
+      // w:0=无雾、1=线性、2=指数(与 WGSL select 分支对应)
+      write_f32(b, 492, Int::to_double(f.kind + 1))
+      write_f32(b, 496, f.color.r)
+      write_f32(b, 500, f.color.g)
+      write_f32(b, 504, f.color.b)
+      write_f32(b, 508, 0.0)
     }
     None => ()
   }

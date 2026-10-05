@@ -32,6 +32,37 @@ pub(all) struct ScenePointLight {
   mut decay : Double
 }
 
+///| 雾(A6):Exp2 指数雾 / Linear 线性雾(three.js Fog/FogExp2)
+pub(all) struct Fog {
+  /// 0=Linear(near/far)、1=Exp2(density)
+  kind : Int
+  /// 雾色
+  mut color : @math3d.Color
+  /// 线性雾起点(near)
+  mut near : Double
+  /// 线性雾终点(far)
+  mut far : Double
+  /// 指数雾密度(density)
+  mut density : Double
+}
+
+///| 指数雾(FogExp2)
+pub fn Fog::exp2(
+  color : @math3d.Color,
+  density : Double
+) -> Fog {
+  { kind: 1, color, near: 1.0, far: 1000.0, density }
+}
+
+///| 线性雾(Fog)
+pub fn Fog::linear(
+  color : @math3d.Color,
+  near : Double,
+  far : Double
+) -> Fog {
+  { kind: 0, color, near, far, density: 0.0 }
+}
+
 ///| 场景光源集合(每类至多一盏;光照管线的 uniform 数据源)
 pub(all) struct SceneLights {
   /// 环境光(None=无环境光贡献)
@@ -66,6 +97,8 @@ pub(all) struct Scene {
   mut background : @math3d.Color?
   /// 光源集合(经 renderers 包的挂接函数从 lights 包光源写入)
   mut lights : SceneLights
+  /// 场景雾(None=无雾;A6)
+  mut fog : Fog?
 }
 
 ///| 构造空场景
@@ -74,6 +107,7 @@ pub fn Scene::new() -> Scene {
     root: Object3D::new(),
     background: None,
     lights: SceneLights::empty(),
+    fog: None,
   }
 }
 

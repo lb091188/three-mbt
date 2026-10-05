@@ -17,6 +17,8 @@ pub(all) struct Material {
   mut map : Texture?
   /// 顶点色开关(three.js vertexColors;几何 colors 属性存在时乘进主色)
   mut vertex_colors : Bool
+  /// 是否受场景雾影响(three.js material.fog,默认 true;天空穹关)
+  mut fog : Bool
 }
 
 ///| Basic 材质(不受光照的纯色)
@@ -29,6 +31,7 @@ pub fn Material::basic(color : @math3d.Color) -> Material {
     shininess: 30.0,
     map: None,
     vertex_colors: false,
+    fog: true,
   }
 }
 
@@ -46,6 +49,7 @@ pub fn Material::lambert(
     shininess: 30.0,
     map: None,
     vertex_colors: false,
+    fog: true,
   }
 }
 
@@ -65,6 +69,7 @@ pub fn Material::phong(
     shininess,
     map: None,
     vertex_colors: false,
+    fog: true,
   }
 }
 
