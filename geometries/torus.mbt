@@ -59,6 +59,6 @@ pub fn torus(
       indices.push(Int::reinterpret_as_uint(d))
     }
   }
-  let geometry : @core.BufferGeometry = { positions, normals, uvs, indices }
+  let geometry : @core.BufferGeometry = { positions, normals, uvs, colors: [], indices }
   geometry
 }

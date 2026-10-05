@@ -74,8 +74,23 @@ pub fn ColorSpace::to_string(self : ColorSpace) -> String {
   }
 }
 
+///| 纹理图像源:RGBA8 紧排字节(mips[0] 为全尺寸层,逐级减半到 1×1;
+///| 行无 padding —— GPU 上传层负责对齐)。CPU 盒式滤波生成 mip 链,
+/// 语义对位 three.js WebGL 的 mipmap(斜视角缩小采样防闪烁)。
+pub(all) struct TextureSource {
+  width : Int
+  height : Int
+  /// mip 链:至少 1 层(全尺寸);generate_mip_chain 生成
+  mips : Array[Bytes]
+}
+
+///| 纹理对象 id 计数器(GPU 资源缓存键,对照 Object3D::id 的用途)
+let texture_id_counter : Ref[UInt64] = Ref(0UL)
+
 ///| 纹理采样与 UV 变换参数(数据层)
 pub(all) struct Texture {
+  /// 对象 id(构造时分配,GPU 纹理缓存键)
+  id : UInt64
   /// U 方向环绕(three.js wrapS)
   mut wrap_s : Wrapping
   /// V 方向环绕(three.js wrapT)
@@ -90,6 +105,10 @@ pub(all) struct Texture {
   mut offset : @math3d.Vector2
   /// 色彩空间标注:含颜色数据的纹理应标 SRGB 或 LinearSRGB(three.js colorSpace)
   mut color_space : ColorSpace
+  /// 各向异性采样倍数(three.js texture.anisotropy,默认 1;斜视角地面用 8)
+  mut anisotropy : Int
+  /// 像素源(None = 仅采样参数占位,渲染层回退 1×1 白纹理)
+  mut source : TextureSource?
 }
 
 ///| 构造(默认值对齐 three.js Texture 构造器:
@@ -97,7 +116,9 @@ pub(all) struct Texture {
 /// minFilter=LinearMipmapLinearFilter、repeat=(1,1)、offset=(0,0)、
 /// colorSpace=NoColorSpace)
 pub fn Texture::new() -> Texture {
+  texture_id_counter.val = texture_id_counter.val + 1UL
   {
+    id: texture_id_counter.val,
     wrap_s: ClampToEdge,
     wrap_t: ClampToEdge,
     mag_filter: Linear,
@@ -105,5 +126,75 @@ pub fn Texture::new() -> Texture {
     repeat: @math3d.Vector2::new(1.0, 1.0),
     offset: @math3d.Vector2::zero(),
     color_space: No,
+    anisotropy: 1,
+    source: None,
   }
+}
+
+///| 从 RGBA8 像素构造带 mip 链的纹理(紧排行,长度须为 w*h*4)
+pub fn Texture::from_rgba(width : Int, height : Int, pixels : Bytes) -> Texture {
+  let t = Texture::new()
+  t.source = Some({
+    width,
+    height,
+    mips: generate_mip_chain(width, height, pixels),
+  })
+  t
+}
+
+///| 重设像素并重建 mip 链(运行时动态改纹理用,如履带滚动偏移走
+///| UV offset 无需重建;整图替换才用这个)
+pub fn Texture::set_rgba(
+  self : Texture,
+  width : Int,
+  height : Int,
+  pixels : Bytes,
+) -> Unit {
+  self.source = Some({
+    width,
+    height,
+    mips: generate_mip_chain(width, height, pixels),
+  })
+}
+
+///| CPU 盒式滤波生成 mip 链:每层 2×2 平均到下一层,直到 1×1;
+///| 非二次幂尺寸按 floor(w/2)/floor(h/2) 收缩(与 WebGL1 不同,
+///| WebGPU/wgpu 允许非二次幂 mip,尺寸取 ceil(w/2) 收缩)。
+pub fn generate_mip_chain(
+  width : Int,
+  height : Int,
+  pixels : Bytes,
+) -> Array[Bytes] {
+  let mips : Array[Bytes] = [pixels]
+  let mut w = width
+  let mut h = height
+  let mut cur = pixels
+  while w > 1 || h > 1 {
+    let nw = if w > 1 { (w + 1) / 2 } else { 1 }
+    let nh = if h > 1 { (h + 1) / 2 } else { 1 }
+    let next : FixedArray[Byte] = FixedArray::make(nw * nh * 4, b'\x00')
+    for y in 0..<nh {
+      for x in 0..<nw {
+        // 源 2×2 块(越界 clamp 到边缘)
+        let x0 = x * 2
+        let y0 = y * 2
+        let x1 = if x0 + 1 < w { x0 + 1 } else { x0 }
+        let y1 = if y0 + 1 < h { y0 + 1 } else { y0 }
+        for c in 0..<4 {
+          let s00 = cur[(y0 * w + x0) * 4 + c].to_int() & 0xFF
+          let s01 = cur[(y0 * w + x1) * 4 + c].to_int() & 0xFF
+          let s10 = cur[(y1 * w + x0) * 4 + c].to_int() & 0xFF
+          let s11 = cur[(y1 * w + x1) * 4 + c].to_int() & 0xFF
+          next[(y * nw + x) * 4 + c] =
+            ((s00 + s01 + s10 + s11 + 2) / 4).to_byte()
+        }
+      }
+    }
+    let nb = Bytes::from_array(next[:])
+    mips.push(nb)
+    cur = nb
+    w = nw
+    h = nh
+  }
+  mips
 }

@@ -19,6 +19,7 @@
 //   320 point_pos : vec4(xyz=世界空间发光位置,w=是否启用)
 //   336 point_color : vec4(rgb=光色*强度)
 //   352 point_params : vec4(x=distance,y=decay)
+//   368 uv_tr : vec4(xy=repeat,zw=offset;A1 纹理管线)
 let lit_wgsl : String = "struct U {\n" +
   "  mvp : mat4x4<f32>,\n" +
   "  model : mat4x4<f32>,\n" +
@@ -34,8 +35,11 @@ let lit_wgsl : String = "struct U {\n" +
   "  point_pos : vec4<f32>,\n" +
   "  point_color : vec4<f32>,\n" +
   "  point_params : vec4<f32>,\n" +
+  "  uv_tr : vec4<f32>,\n" +
   "}\n" +
   "@group(0) @binding(0) var<uniform> u : U;\n" +
+"@group(1) @binding(0) var tmap : texture_2d<f32>;\n" +
+"@group(1) @binding(1) var tsamp : sampler;\n" +
   "const RECIPROCAL_PI : f32 = 0.3183098861837907;\n" +
   "fn f_schlick(f0 : vec3<f32>, dot_vh : f32) -> vec3<f32> {\n" +
   "  let fresnel = exp2((-5.55473 * dot_vh - 6.98316) * dot_vh);\n" +
@@ -63,15 +67,21 @@ let lit_wgsl : String = "struct U {\n" +
   "  @builtin(position) pos : vec4<f32>,\n" +
   "  @location(0) world_pos : vec3<f32>,\n" +
   "  @location(1) world_normal : vec3<f32>,\n" +
+  "  @location(2) uv : vec2<f32>,\n" +
+  "  @location(3) vcolor : vec3<f32>,\n" +
   "}\n" +
   "@vertex fn vs_main(@location(0) obj_pos : vec3<f32>,\n" +
-  "    @location(1) obj_normal : vec3<f32>) -> VSOut {\n" +
+  "    @location(1) obj_normal : vec3<f32>,\n" +
+  "    @location(2) obj_uv : vec2<f32>,\n" +
+  "    @location(3) obj_color : vec3<f32>) -> VSOut {\n" +
   "  var o : VSOut;\n" +
   "  o.pos = u.mvp * vec4<f32>(obj_pos, 1.0);\n" +
   "  o.world_pos = (u.model * vec4<f32>(obj_pos, 1.0)).xyz;\n" +
   "  let nm = mat3x3<f32>(u.normal_mat[0].xyz, u.normal_mat[1].xyz,\n" +
   "    u.normal_mat[2].xyz);\n" +
   "  o.world_normal = nm * obj_normal;\n" +
+  "  o.uv = obj_uv;\n" +
+  "  o.vcolor = obj_color;\n" +
   "  return o;\n" +
   "}\n" +
   "@fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {\n" +
@@ -102,13 +112,17 @@ let lit_wgsl : String = "struct U {\n" +
   "        brdf_blinn_phong(l, v, n, u.specular.xyz, shininess);\n" +
   "    }\n" +
   "  }\n" +
-  "  var rgb = u.emissive.xyz + diffuse_irradiance * RECIPROCAL_PI * u.color.xyz;\n" +
+  "  var base_color = u.color.xyz * in.vcolor;\n" +
+"  let uv2 = in.uv * u.uv_tr.xy + u.uv_tr.zw;\n" +
+"  let ts = textureSample(tmap, tsamp, uv2);\n" +
+"  base_color = base_color * ts.xyz;\n" +
+"  var rgb = u.emissive.xyz + diffuse_irradiance * RECIPROCAL_PI * base_color;\n" +
   "  rgb = rgb + specular_sum;\n" +
   "  return vec4<f32>(rgb, u.color.a);\n" +
   "}\n"
 
-///| 光照 uniform 缓冲大小(3 mat4 + 13 vec4 = 368B)
-let lit_uniform_size : UInt64 = 368UL
+///| 光照 uniform 缓冲大小(3 mat4 + 14 vec4 = 384B;末位 uv_tr = repeat.xy+offset.xy)
+let lit_uniform_size : UInt64 = 384UL
 
 ///| 创建光照管线(顶点布局:双缓冲——slot0 位置、slot1 法线,各 float32x3 步长 12;
 ///| BufferGeometry 的 positions/normals 本就是两个独立数组,直接分 buffer 上传
@@ -117,10 +131,11 @@ fn create_lit_pipeline(
   device : @wgpu_mbt.Device,
   format : @wgpu_mbt.TextureFormat,
   bgl : @wgpu_mbt.BindGroupLayout,
+  tex_bgl : @wgpu_mbt.BindGroupLayout,
 ) -> @wgpu_mbt.RenderPipeline raise Error {
   let vs = device.create_shader_module_wgsl(lit_wgsl)
   let fs = device.create_shader_module_wgsl(lit_wgsl)
-  let pl = device.create_pipeline_layout_1(bgl)
+  let pl = device.create_pipeline_layout_2(bgl, tex_bgl)
   let b = @wgpu_mbt.RenderPipelineDescBuilder::new(vs, layout=pl)
   b.set_fragment_module(fs)
   b.set_entry_points("vs_main", "fs_main")
@@ -136,6 +151,11 @@ fn create_lit_pipeline(
   b.add_vertex_attribute(@wgpu_mbt.VERTEX_FORMAT_FLOAT32X3, 0UL, 0U)
   let _vb1 = b.add_vertex_buffer_layout(12UL, @wgpu_mbt.VERTEX_STEP_MODE_VERTEX)
   b.add_vertex_attribute(@wgpu_mbt.VERTEX_FORMAT_FLOAT32X3, 0UL, 1U)
+  // slot2 uv(float32x2)、slot3 顶点色(float32x3)——几何缺属性时上传层补默认值
+  let _vb2 = b.add_vertex_buffer_layout(8UL, @wgpu_mbt.VERTEX_STEP_MODE_VERTEX)
+  b.add_vertex_attribute(@wgpu_mbt.VERTEX_FORMAT_FLOAT32X2, 0UL, 2U)
+  let _vb3 = b.add_vertex_buffer_layout(12UL, @wgpu_mbt.VERTEX_STEP_MODE_VERTEX)
+  b.add_vertex_attribute(@wgpu_mbt.VERTEX_FORMAT_FLOAT32X3, 0UL, 3U)
   let p = b.create_pipeline(device)
   b.free()
   p
@@ -151,7 +171,7 @@ fn lit_uniform_bytes(
   lights : @core.SceneLights,
 ) -> Bytes {
   // 零初始化:未启用的灯光段保持 0(enable 位与颜色皆零)
-  let b : FixedArray[Byte] = FixedArray::make(368, b'\x00')
+  let b : FixedArray[Byte] = FixedArray::make(384, b'\x00')
   write_matrix4(b, 0, mvp)
   write_matrix4(b, 64, model)
   write_matrix4(b, 128, normal_mat)
@@ -214,6 +234,16 @@ fn lit_uniform_bytes(
     }
     None => ()
   }
+  // uv_tr:repeat.xy + offset.xy(无贴图时 1,1,0,0 —— 采样白纹理结果不变)
+  let (ru, rv, ou, ov) = match material.map {
+    Some(t) =>
+      (t.repeat.x, t.repeat.y, t.offset.x, t.offset.y)
+    None => (1.0, 1.0, 0.0, 0.0)
+  }
+  write_f32(b, 368, ru)
+  write_f32(b, 372, rv)
+  write_f32(b, 376, ou)
+  write_f32(b, 380, ov)
   to_bytes(b)
 }
 

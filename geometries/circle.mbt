@@ -42,6 +42,6 @@ pub fn circle(
     indices.push(Int::reinterpret_as_uint(i + 1))
     indices.push(0)
   }
-  let geometry : @core.BufferGeometry = { positions, normals, uvs, indices }
+  let geometry : @core.BufferGeometry = { positions, normals, uvs, colors: [], indices }
   geometry
 }

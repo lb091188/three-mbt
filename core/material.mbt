@@ -12,6 +12,11 @@ pub(all) struct Material {
   mut specular : @math3d.Color
   /// 高光锐度,越大高光越锐(仅 Phong 生效)
   mut shininess : Double
+  /// 漫反射贴图(three.js map;None = 纯色。lit 管线采样乘进主色,
+  /// 无贴图时渲染层绑 1×1 白纹理保持同一管线)
+  mut map : Texture?
+  /// 顶点色开关(three.js vertexColors;几何 colors 属性存在时乘进主色)
+  mut vertex_colors : Bool
 }
 
 ///| Basic 材质(不受光照的纯色)
@@ -22,6 +27,8 @@ pub fn Material::basic(color : @math3d.Color) -> Material {
     emissive: @math3d.Color::black(),
     specular: @math3d.Color::black(),
     shininess: 30.0,
+    map: None,
+    vertex_colors: false,
   }
 }
 
@@ -37,6 +44,8 @@ pub fn Material::lambert(
     emissive,
     specular: @math3d.Color::black(),
     shininess: 30.0,
+    map: None,
+    vertex_colors: false,
   }
 }
 
@@ -48,7 +57,15 @@ pub fn Material::phong(
   shininess : Double,
   emissive : @math3d.Color
 ) -> Material {
-  { kind: 2, color, emissive, specular, shininess }
+  {
+    kind: 2,
+    color,
+    emissive,
+    specular,
+    shininess,
+    map: None,
+    vertex_colors: false,
+  }
 }
 
 ///| 是否 Basic(对应 three.js isMeshBasicMaterial)

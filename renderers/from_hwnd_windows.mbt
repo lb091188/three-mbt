@@ -54,8 +54,9 @@ pub fn WebGPURenderer::from_hwnd(
     @wgpu_mbt.BUFFER_BINDING_TYPE_UNIFORM,
   )
   let bgl = bglb.finish(device)
-  let pipeline = create_basic_pipeline(device, format, bgl)
-  let lit_pipeline = create_lit_pipeline(device, format, bgl)
+  let tex_bgl = create_texture_bgl(device)
+  let pipeline = create_basic_pipeline(device, format, bgl, tex_bgl)
+  let lit_pipeline = create_lit_pipeline(device, format, bgl, tex_bgl)
   let r : WebGPURenderer = {
     instance,
     adapter,
@@ -66,6 +67,9 @@ pub fn WebGPURenderer::from_hwnd(
     pipeline_basic: pipeline,
     pipeline_lit: lit_pipeline,
     bgl,
+    tex_bgl,
+    tex_cache: @hashmap.HashMap([], capacity=16),
+    white: None,
     width,
     height,
     depth_view: None,

@@ -1,4 +1,5 @@
 import {
   "NoahLiu/three-native/math3d",
   "NoahLiu/three-native/core",
+  "mizchi/image",
 }

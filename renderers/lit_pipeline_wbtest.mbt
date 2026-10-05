@@ -23,8 +23,8 @@ test "lit_uniform_bytes:总长与矩阵/相机/材质偏移" {
     material,
     @core.SceneLights::empty(),
   )
-  debug_inspect(ub.length() == 368, content="true")
-  debug_inspect(lit_uniform_size == 368UL, content="true")
+  debug_inspect(ub.length() == 384, content="true")
+  debug_inspect(lit_uniform_size == 384UL, content="true")
   // mvp(0)与 model(64)单位阵:m11=1、m12=0
   debug_inspect(read_f32_at(ub, 0) == 1.0, content="true")
   debug_inspect(read_f32_at(ub, 4) == 0.0, content="true")

@@ -22,10 +22,13 @@ fn create_basic_pipeline(
   device : @wgpu_mbt.Device,
   format : @wgpu_mbt.TextureFormat,
   bgl : @wgpu_mbt.BindGroupLayout,
+  tex_bgl : @wgpu_mbt.BindGroupLayout,
 ) -> @wgpu_mbt.RenderPipeline raise Error {
   let vs = device.create_shader_module_wgsl(basic_wgsl)
   let fs = device.create_shader_module_wgsl(basic_wgsl)
-  let pl = device.create_pipeline_layout_1(bgl)
+  // Basic 不采样贴图,但布局统一挂两组(shader 未引用的组合法),
+  /// 两条管线管线布局同构,切换无重排
+  let pl = device.create_pipeline_layout_2(bgl, tex_bgl)
   let b = @wgpu_mbt.RenderPipelineDescBuilder::new(vs, layout=pl)
   b.set_fragment_module(fs)
   b.set_entry_points("vs_main", "fs_main")

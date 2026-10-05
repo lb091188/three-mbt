@@ -6,6 +6,10 @@ struct GpuMesh {
   vbuf : @wgpu_mbt.Buffer
   /// 法线顶点缓冲(lit 管线 slot1;Basic 材质或无 normals 的几何为 None)
   nbuf : @wgpu_mbt.Buffer?
+  /// uv 顶点缓冲(lit 管线 slot2;几何无 uv 时补 (0,0) 默认)
+  uvbuf : @wgpu_mbt.Buffer?
+  /// 顶点色缓冲(lit 管线 slot3;几何无 colors 时补 (1,1,1) 白)
+  cbuf : @wgpu_mbt.Buffer?
   ibuf : @wgpu_mbt.Buffer
   ubuf : @wgpu_mbt.Buffer
   bind_group : @wgpu_mbt.BindGroup
@@ -19,6 +23,12 @@ pub(all) struct WebGPURenderer {
   device : @wgpu_mbt.Device
   queue : @wgpu_mbt.Queue
   surface : @wgpu_mbt.Surface
+  /// group(1) 布局:纹理+采样器(gpu_texture.mbt)
+  tex_bgl : @wgpu_mbt.BindGroupLayout
+  /// 纹理对象 id → GPU 资源(ensure_gpu_texture 填充)
+  mut tex_cache : @hashmap.HashMap[UInt64, GpuTexture]
+  /// 1×1 白纹理(无贴图材质占位,惰性建)
+  mut white : GpuTexture?
   format : @wgpu_mbt.TextureFormat
   pipeline_basic : @wgpu_mbt.RenderPipeline
   pipeline_lit : @wgpu_mbt.RenderPipeline
@@ -70,8 +80,9 @@ pub fn WebGPURenderer::from_xlib(
     @wgpu_mbt.BUFFER_BINDING_TYPE_UNIFORM,
   )
   let bgl = bglb.finish(device)
-  let pipeline = create_basic_pipeline(device, format, bgl)
-  let lit_pipeline = create_lit_pipeline(device, format, bgl)
+  let tex_bgl = create_texture_bgl(device)
+  let pipeline = create_basic_pipeline(device, format, bgl, tex_bgl)
+  let lit_pipeline = create_lit_pipeline(device, format, bgl, tex_bgl)
   let r : WebGPURenderer = {
     instance,
     adapter,
@@ -82,6 +93,9 @@ pub fn WebGPURenderer::from_xlib(
     pipeline_basic: pipeline,
     pipeline_lit: lit_pipeline,
     bgl,
+    tex_bgl,
+    tex_cache: @hashmap.HashMap([], capacity=16),
+    white: None,
     width,
     height,
     depth_view: None,
@@ -173,6 +187,41 @@ fn WebGPURenderer::ensure_gpu_mesh(
   } else {
     None
   }
+  // uv/顶点色缓冲:几何缺属性补默认(uv=(0,0) 无效采样位、色=白乘法恒等),
+  // lit 管线顶点布局恒四槽,免按属性分派管线变体
+  let vcount = m.geometry.vertex_count()
+  let (uvbuf, cbuf) = if lit {
+    let uv_bytes = if m.geometry.uvs.length() == vcount * 2 {
+      f32_array_bytes(m.geometry.uvs)
+    } else {
+      zero_bytes(vcount * 2 * 4)
+    }
+    let c_bytes = if m.geometry.colors.length() == vcount * 3 {
+      f32_array_bytes(m.geometry.colors)
+    } else {
+      white_f32_bytes(vcount * 3)
+    }
+    (
+      Some(
+        self.device.create_buffer_init(
+          usage=@wgpu_mbt.BufferUsage::from_u64(
+            @wgpu_mbt.BUFFER_USAGE_VERTEX,
+          ),
+          uv_bytes,
+        ),
+      ),
+      Some(
+        self.device.create_buffer_init(
+          usage=@wgpu_mbt.BufferUsage::from_u64(
+            @wgpu_mbt.BUFFER_USAGE_VERTEX,
+          ),
+          c_bytes,
+        ),
+      ),
+    )
+  } else {
+    (None, None)
+  }
   let ubuf = self.device.create_buffer(
     size=if lit { lit_uniform_size } else { uniform_size },
     usage=@wgpu_mbt.BufferUsage::from_u64(
@@ -186,6 +235,8 @@ fn WebGPURenderer::ensure_gpu_mesh(
   let g : GpuMesh = {
     vbuf,
     nbuf,
+    uvbuf,
+    cbuf,
     ibuf,
     ubuf,
     bind_group,
@@ -266,17 +317,39 @@ pub fn WebGPURenderer::render(
         self.queue.write_buffer(g.ubuf, 0UL, ub)
         pass.set_pipeline(self.pipeline_lit)
         pass.set_bind_group0(g.bind_group)
+        // group(1):材质贴图(无 map 绑 1×1 白,统一采样路径)
+        let gt = match m.material.map {
+          Some(t) =>
+            self.ensure_gpu_texture(t) catch { _ => self.white_texture() }
+          None => self.white_texture()
+        }
+        pass.set_bind_group(1U, gt.bind_group, [])
         pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
         pass.set_vertex_buffer(1U, nbuf, 0UL, nbuf.get_size())
+        pass.set_vertex_buffer(
+          2U,
+          g.uvbuf.unwrap(),
+          0UL,
+          g.uvbuf.unwrap().get_size(),
+        )
+        pass.set_vertex_buffer(
+          3U,
+          g.cbuf.unwrap(),
+          0UL,
+          g.cbuf.unwrap().get_size(),
+        )
         pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
         pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)
       }
       None => {
-        // Basic 路径:uniform = mvp + color(rgba)
+        // Basic 路径:uniform = mvp + color(rgba)。布局与 lit 同构
+        // (双 BGL),group(1) 必须同样设置 —— shader 虽不采样,绑白占位
         let ub = uniform_bytes(vp.multiply(node.matrix_world), m.material.color)
         self.queue.write_buffer(g.ubuf, 0UL, ub)
+        let gw = self.white_texture()
         pass.set_pipeline(self.pipeline_basic)
         pass.set_bind_group0(g.bind_group)
+        pass.set_bind_group(1U, gw.bind_group, [])
         pass.set_vertex_buffer(0U, g.vbuf, 0UL, g.vbuf.get_size())
         pass.set_index_buffer_u32(g.ibuf, 0UL, g.ibuf.get_size())
         pass.draw_indexed(g.index_count, 1U, 0U, 0, 0U)

@@ -130,6 +130,7 @@ pub fn parse_obj_detailed(text : String) -> ObjParseResult {
     } else {
       []
     },
+    colors: [],
     indices: out_indices,
   }
   { geometry, skipped_lines: skipped.val, }

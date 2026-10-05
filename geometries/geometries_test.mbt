@@ -292,8 +292,11 @@ test "torus(1,0.4,3,4,π) 拓扑与数值" {
 }
 
 ///|
-test "core 既有几何 uvs 默认为空" {
-  debug_inspect(@core.BufferGeometry::box(1.0, 1.0, 1.0).uvs.length(), content="0")
-  debug_inspect(@core.BufferGeometry::plane(2.0, 2.0).uvs.length(), content="0")
+test "core 既有几何生成 uv(three.js 同布局;空几何无)" {
+  // box:24 顶点 ×2 = 48;plane:4 顶点 ×2 = 8(A1 起带贴图管线,UV 必备)
+  debug_inspect(@core.BufferGeometry::box(1.0, 1.0, 1.0).uvs.length(), content="48")
+  debug_inspect(@core.BufferGeometry::plane(2.0, 2.0).uvs.length(), content="8")
   debug_inspect(@core.BufferGeometry::empty().uvs.length(), content="0")
+  // 顶点色属性:生成器不产出,留空由管线层补白
+  debug_inspect(@core.BufferGeometry::box(1.0, 1.0, 1.0).colors.length(), content="0")
 }

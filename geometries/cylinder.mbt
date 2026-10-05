@@ -163,7 +163,7 @@ pub fn cylinder(
       )
     }
   }
-  let geometry : @core.BufferGeometry = { positions, normals, uvs, indices }
+  let geometry : @core.BufferGeometry = { positions, normals, uvs, colors: [], indices }
   geometry
 }
 

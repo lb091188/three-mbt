@@ -49,3 +49,22 @@ fn uniform_bytes(mvp : @math3d.Matrix4, color : @math3d.Color) -> Bytes {
   write_f32(b, 76, 1.0)
   to_bytes(b)
 }
+
+///| n 字节全零(uv 缺省顶点缓冲用)
+fn zero_bytes(n : Int) -> Bytes {
+  to_bytes(FixedArray::make(n, b'\x00'))
+}
+
+///| n 个 f32 全 1.0(顶点色缺省 = 白,乘法恒等;小端 0x3F800000)
+fn white_f32_bytes(n : Int) -> Bytes {
+  let one = Float::from_double(1.0).reinterpret_as_uint()
+  Bytes::makei(
+    n * 4,
+    i => match i % 4 {
+      0 => (one & 0xFFU).to_byte()
+      1 => ((one >> 8) & 0xFFU).to_byte()
+      2 => ((one >> 16) & 0xFFU).to_byte()
+      _ => ((one >> 24) & 0xFFU).to_byte()
+    },
+  )
+}
