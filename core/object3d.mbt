@@ -22,6 +22,9 @@ pub(all) struct Object3D {
   mut name : String
   /// 渲染组件(几何+材质;None=纯组节点)
   mut mesh : Mesh?
+  /// 自定义元数据(glTF extras;值统一字符串化 —— 游戏 GLB 用到
+  /// type/wheelR/zone/armor 四键,Raycaster 与装配逻辑按此取)
+  mut extras : Map[String, String]
   /// 子节点(数组内容可变;父子互斥由 add/remove 维护)
   children : Array[Object3D]
   mut parent : Object3D?
@@ -40,6 +43,7 @@ pub fn Object3D::new() -> Object3D {
     visible: true,
     name: "",
     mesh: None,
+    extras: {},
     children: [],
     parent: None,
   }
