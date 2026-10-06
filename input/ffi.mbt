@@ -48,3 +48,41 @@ extern "c" fn sf_x11_open_display() -> UInt64 = "sf_x11_open_display"
 
 ///|
 extern "c" fn sf_x11_close_display(dpy : UInt64) -> Unit = "sf_x11_close_display"
+
+// —— 指针锁定(FPS 式)命令型入口(PointerLock 机制层用)——
+// 在宿主(GDK)自己的 display 上主线程调用;只发请求读回复,不收事件。
+
+///|
+/// 抓捕指针到窗口:隐形光标 + confine;返回 0 = 成功(GrabSuccess)。
+extern "c" fn sf_x11_grab_pointer(dpy : UInt64, win : UInt64) -> Int = "sf_x11_grab_pointer"
+
+///|
+/// 释放抓捕(光标随之恢复)。
+extern "c" fn sf_x11_ungrab_pointer(dpy : UInt64) -> Int = "sf_x11_ungrab_pointer"
+
+///|
+/// 把指针瞬移到窗口内 (x, y)(回中用;会产生一条落在目标点的 motion)。
+extern "c" fn sf_x11_warp_pointer_window(
+  dpy : UInt64,
+  win : UInt64,
+  x : Int,
+  y : Int,
+) -> Unit = "sf_x11_warp_pointer_window"
+
+///|
+/// 当前键盘焦点窗口 XID(失焦检测用)。
+extern "c" fn sf_x11_input_focus_window(dpy : UInt64) -> UInt64 = "sf_x11_input_focus_window"
+
+///|
+/// 窗口的父窗口 XID(根窗口父=自身;失效返回 0)。
+extern "c" fn sf_x11_window_parent(dpy : UInt64, win : UInt64) -> UInt64 = "sf_x11_window_parent"
+
+///|
+/// 指针采样:out 写 12 字节 [wx i32][wy i32][btn1 i32](坐标相对锁定
+/// 窗口,btn1=左键按住);返回 0 = 不同屏/失败。
+#borrow(out)
+extern "c" fn sf_x11_query_pointer(dpy : UInt64, win : UInt64, out : Bytes) -> Int = "sf_x11_query_pointer"
+
+///|
+/// EWMH 活动窗口(_NET_ACTIVE_WINDOW;0=无 EWMH/读失败)。
+extern "c" fn sf_x11_active_window(dpy : UInt64) -> UInt64 = "sf_x11_active_window"

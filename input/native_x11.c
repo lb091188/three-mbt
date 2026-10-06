@@ -39,6 +39,19 @@ void sf_x11_pump_stop(uint64_t pump) { (void)pump; }
 uint64_t sf_x11_default_root_window(uint64_t dpy) { (void)dpy; return 0; }
 uint64_t sf_x11_open_display(void) { return 0; }
 void sf_x11_close_display(uint64_t dpy) { (void)dpy; }
+int32_t sf_x11_grab_pointer(uint64_t dpy, uint64_t win) {
+  (void)dpy; (void)win; return 1;
+}
+int32_t sf_x11_ungrab_pointer(uint64_t dpy) { (void)dpy; return 1; }
+void sf_x11_warp_pointer_window(uint64_t dpy, uint64_t win, int32_t x,
+                                int32_t y) {
+  (void)dpy; (void)win; (void)x; (void)y;
+}
+uint64_t sf_x11_input_focus_window(uint64_t dpy) { (void)dpy; return 0; }
+int32_t sf_x11_query_pointer(uint64_t dpy, uint64_t win, uint8_t *out) {
+  (void)dpy; (void)win; (void)out; return 0;
+}
+uint64_t sf_x11_active_window(uint64_t dpy) { (void)dpy; return 0; }
 double sf_x11_bits_to_f64(int64_t bits) { (void)bits; return 0.0; }
 
 #else /* !_WIN32 */
@@ -63,6 +76,38 @@ typedef unsigned long (*xkb_keycode_to_keysym_fn)(void *, unsigned char, int,
                                                   int);
 typedef int (*default_screen_fn)(void *);
 typedef unsigned long (*root_window_fn)(void *, int);
+
+/* 指针锁定(FPS 式)命令型入口:grab/warp/focus 查询只发请求读回复、
+ * 不收事件,可在宿主(GDK)自己的 display 上主线程内直接调(与泵的
+ * "第二连接收不到事件"教训不冲突 —— 那是事件投递问题,不是请求
+ * 回复问题)。XGrabPointer 的 cursor 参数即抓捕期间显示的光标,传
+ * 隐形光标一并解决隐藏指针。 */
+typedef int (*grab_pointer_fn)(void *, unsigned long, int, unsigned int,
+                               int, int, unsigned long, unsigned long,
+                               unsigned long);
+typedef int (*ungrab_pointer_fn)(void *, unsigned long);
+typedef void (*warp_pointer_fn)(void *, unsigned long, unsigned long, int,
+                                int, unsigned int, unsigned int, int, int);
+typedef int (*flush_fn)(void *);
+typedef int (*sync_fn)(void *, int);
+typedef unsigned long (*create_bitmap_fn)(void *, unsigned long, const char *,
+                                          unsigned int, unsigned int);
+typedef unsigned long (*create_pcursor_fn)(void *, unsigned long,
+                                           unsigned long, void *, void *,
+                                           unsigned int, unsigned int);
+typedef int (*get_input_focus_fn)(void *, unsigned long *, int *);
+typedef int (*query_tree_fn)(void *, unsigned long, unsigned long *,
+                             unsigned long *, unsigned long **,
+                             unsigned int *);
+typedef int (*xfree_fn)(void *);
+typedef int (*query_pointer_fn)(void *, unsigned long, unsigned long *,
+                                unsigned long *, int *, int *, int *,
+                                int *, unsigned int *);
+typedef unsigned long (*intern_atom_fn)(void *, const char *, int);
+typedef int (*get_property_fn)(void *, unsigned long, unsigned long, long,
+                               long, int, unsigned long, unsigned long *,
+                               int *, unsigned long *, unsigned long *,
+                               unsigned char **);
 
 /* XIEventMask { int deviceid; int mask_len; unsigned char *mask; } */
 typedef struct {
@@ -120,6 +165,23 @@ static free_event_data_fn p_free_event_data;
 static xkb_keycode_to_keysym_fn p_xkb_keysym;
 static default_screen_fn p_default_screen;
 static root_window_fn p_root_window;
+static grab_pointer_fn p_grab_pointer;
+static ungrab_pointer_fn p_ungrab_pointer;
+static warp_pointer_fn p_warp_pointer;
+static flush_fn p_flush;
+static sync_fn p_sync;
+static create_bitmap_fn p_create_bitmap;
+static create_pcursor_fn p_create_pcursor;
+static get_input_focus_fn p_get_input_focus;
+static query_tree_fn p_query_tree;
+static xfree_fn p_xfree;
+static query_pointer_fn p_query_pointer;
+static intern_atom_fn p_intern_atom;
+static get_property_fn p_get_property;
+static unsigned long g_atom_active = 0; /* _NET_ACTIVE_WINDOW,懒取 */
+/* 隐形光标缓存:每 display 一枚,grab 期间常驻(建后不 free) */
+static void *g_lock_cursor_dpy = NULL;
+static unsigned long g_lock_cursor = 0;
 
 static int sf_load(void) {
   if (g_loaded) {
@@ -163,6 +225,19 @@ static int sf_load(void) {
   SF_SYM(xkb_keysym, g_x11_lib, "XkbKeycodeToKeysym");
   SF_SYM(default_screen, g_x11_lib, "XDefaultScreen");
   SF_SYM(root_window, g_x11_lib, "XRootWindow");
+  SF_SYM(grab_pointer, g_x11_lib, "XGrabPointer");
+  SF_SYM(ungrab_pointer, g_x11_lib, "XUngrabPointer");
+  SF_SYM(warp_pointer, g_x11_lib, "XWarpPointer");
+  SF_SYM(flush, g_x11_lib, "XFlush");
+  SF_SYM(sync, g_x11_lib, "XSync");
+  SF_SYM(create_bitmap, g_x11_lib, "XCreateBitmapFromData");
+  SF_SYM(create_pcursor, g_x11_lib, "XCreatePixmapCursor");
+  SF_SYM(get_input_focus, g_x11_lib, "XGetInputFocus");
+  SF_SYM(query_tree, g_x11_lib, "XQueryTree");
+  SF_SYM(intern_atom, g_x11_lib, "XInternAtom");
+  SF_SYM(get_property, g_x11_lib, "XGetWindowProperty");
+  SF_SYM(xfree, g_x11_lib, "XFree");
+  SF_SYM(query_pointer, g_x11_lib, "XQueryPointer");
   if (g_xi_lib != NULL) {
     SF_SYM(xi_query_version, g_xi_lib, "XIQueryVersion");
     SF_SYM(xi_select_events, g_xi_lib, "XISelectEvents");
@@ -459,4 +534,146 @@ double sf_x11_bits_to_f64(int64_t bits) {
   return out;
 }
 
+/* —— 指针锁定(FPS 式)命令型入口 ——
+
+owner_events=1 且抓捕窗口属本进程(GDK),事件仍按原选择投递给宿主
+(宿主照收 motion → yue on_mouse_move 不受影响);confine_to=抓捕窗口
+防指针逃出;cursor=隐形光标。GrabModeAsync=1(不冻结事件流)。
+事件掩码:ButtonPress(1<<2)|ButtonRelease(1<<3)|PointerMotion(1<<6)。 */
+static unsigned long sf_ensure_invisible_cursor(void *dpy) {
+  if (g_lock_cursor_dpy == dpy && g_lock_cursor != 0) {
+    return g_lock_cursor;
+  }
+  unsigned long root = p_root_window(dpy, p_default_screen(dpy));
+  char zero = 0;
+  unsigned long bmp = p_create_bitmap(dpy, root, &zero, 1, 1);
+  if (bmp == 0) {
+    return 0;
+  }
+  unsigned char color[32]; /* XColor 置零(LP64 实占 24B),32B 余量 */
+  memset(color, 0, sizeof(color));
+  unsigned long cur = p_create_pcursor(dpy, bmp, bmp, (void *)color,
+                                       (void *)color, 0, 0);
+  if (cur != 0) {
+    g_lock_cursor_dpy = dpy;
+    g_lock_cursor = cur;
+  }
+  return cur;
+}
+
+int32_t sf_x11_grab_pointer(uint64_t dpy, uint64_t win) {
+  if (!sf_load() || dpy == 0 || win == 0) {
+    return 1;
+  }
+  unsigned long cur = sf_ensure_invisible_cursor((void *)dpy);
+  int r = p_grab_pointer((void *)dpy, (unsigned long)win, 1 /*owner_events*/,
+                         (1u << 2) | (1u << 3) | (1u << 6) /*按钮+移动*/,
+                         1 /*GrabModeAsync*/, 1 /*GrabModeAsync*/,
+                         (unsigned long)win /*confine_to*/, cur,
+                         0 /*CurrentTime*/);
+  p_sync((void *)dpy, 0);
+  return r; /* 0 = GrabSuccess */
+}
+
+int32_t sf_x11_ungrab_pointer(uint64_t dpy) {
+  if (!sf_load() || dpy == 0) {
+    return 1;
+  }
+  p_ungrab_pointer((void *)dpy, 0 /*CurrentTime*/);
+  p_sync((void *)dpy, 0);
+  return 0;
+}
+
+void sf_x11_warp_pointer_window(uint64_t dpy, uint64_t win, int32_t x,
+                                int32_t y) {
+  if (!sf_load() || dpy == 0 || win == 0) {
+    return;
+  }
+  p_warp_pointer((void *)dpy, 0 /*None=全屏源*/, (unsigned long)win, 0, 0, 0,
+                 0, x, y);
+  p_flush((void *)dpy);
+}
+
+uint64_t sf_x11_input_focus_window(uint64_t dpy) {
+  if (!sf_load() || dpy == 0) {
+    return 0;
+  }
+  unsigned long focus = 0;
+  int revert = 0;
+  p_get_input_focus((void *)dpy, &focus, &revert);
+  return (uint64_t)focus;
+}
+
+/* 锁定窗口的父窗口(XQueryTree 只取 parent;根窗口父=自身)。
+ * 失焦判定用:键盘焦点在顶层窗口(XGetInputFocus),而锁定的是
+ * 宿主容器子窗口 —— 需沿父链上溯比对,不能直接等值。 */
+uint64_t sf_x11_window_parent(uint64_t dpy, uint64_t win) {
+  if (!sf_load() || dpy == 0 || win == 0) {
+    return 0;
+  }
+  unsigned long root = 0, parent = 0, *children = NULL;
+  unsigned int nchildren = 0;
+  if (!p_query_tree((void *)dpy, (unsigned long)win, &root, &parent,
+                    &children, &nchildren)) {
+    return 0;
+  }
+  if (children != NULL) {
+    p_xfree(children); /* XQueryTree 的 children 数组归调用方释放 */
+  }
+  return (uint64_t)parent;
+}
+
 #endif /* _WIN32 */
+
+/* 指针采样(锁定差分/按钮轮询;core grab 抑制 GDK/XI2 事件投递,采样走
+ * 请求-回复不受影响):win_x/win_y 相对锁定窗口,mask 含 Button1Mask。
+ * out 写 12 字节 [wx i32][wy i32][btn1 i32];返回 0=不同屏/失败。 */
+int32_t sf_x11_query_pointer(uint64_t dpy, uint64_t win, uint8_t *out) {
+  if (!sf_load() || dpy == 0 || win == 0 || out == NULL) {
+    return 0;
+  }
+  unsigned long root = 0, child = 0;
+  int rx = 0, ry = 0, wx = 0, wy = 0;
+  unsigned int mask = 0;
+  if (!p_query_pointer((void *)dpy, (unsigned long)win, &root, &child, &rx,
+                       &ry, &wx, &wy, &mask)) {
+    return 0;
+  }
+  int32_t *w = (int32_t *)out;
+  w[0] = wx;
+  w[1] = wy;
+  w[2] = (mask & 0x0100u) ? 1 : 0; /* Button1Mask */
+  return 1;
+}
+
+/* EWMH 活动窗口(_NET_ACTIVE_WINDOW)。Mutter 把键盘焦点放在独立辅助
+ * 窗口(XGetInputFocus 返回的客户窗口 XID+1 之类),祖先链比对会误判
+ * 失焦;_NET_ACTIVE_WINDOW 是 WM 维护的客户顶层口径,跨 WM 标准。
+ * 返回 0 = 无 EWMH/读失败(调用方回退 XGetInputFocus 路径)。 */
+uint64_t sf_x11_active_window(uint64_t dpy) {
+  if (!sf_load() || dpy == 0) {
+    return 0;
+  }
+  if (g_atom_active == 0) {
+    g_atom_active = p_intern_atom((void *)dpy, "_NET_ACTIVE_WINDOW", 1);
+    if (g_atom_active == 0) {
+      return 0;
+    }
+  }
+  unsigned long root = p_root_window((void *)dpy, p_default_screen((void *)dpy));
+  unsigned long actual_type = 0;
+  int actual_format = 0;
+  unsigned long nitems = 0, bytes_after = 0;
+  unsigned char *data = NULL;
+  int r = p_get_property((void *)dpy, root, g_atom_active, 0, 1, 0, 0,
+                         &actual_type, &actual_format, &nitems, &bytes_after,
+                         &data);
+  uint64_t out = 0;
+  if (r == 0 && data != NULL && nitems >= 1 && actual_format == 32) {
+    out = (uint64_t)((unsigned long *)data)[0];
+  }
+  if (data != NULL) {
+    p_xfree(data);
+  }
+  return out;
+}
