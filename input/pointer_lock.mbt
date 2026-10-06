@@ -20,6 +20,7 @@ pub struct PointerLock {
   mut cx : Int
   mut cy : Int
   mut locked : Bool
+  mut last_status : Int // 最近一次 acquire 的 XGrabPointer 返回码(诊断)
 }
 
 ///|
@@ -44,19 +45,30 @@ pub fn PointerLock::attach(
     cx: width / 2,
     cy: height / 2,
     locked: false,
+    last_status: -1,
   })
 }
 
 ///|
 /// 抓捕指针(隐形光标 + confine 到窗口)并回中。成功 true。
 pub fn PointerLock::acquire(self : PointerLock) -> Bool {
-  if sf_x11_grab_pointer(self.dpy, self.win) == 0 {
+  let r = sf_x11_grab_pointer(self.dpy, self.win)
+  self.last_status = r
+  if r == 0 {
     self.locked = true
     self.recentre()
     true
   } else {
     false
   }
+}
+
+///|
+/// 最近一次 acquire 的 XGrabPointer 返回码: 0=成功, 1=AlreadyGrabbed
+/// (他人/隐式抓捕中, 常见于按钮按住瞬间), 2=GrabInvalidTime,
+/// 3=GrabNotViewable(窗口未映射, 常见于切换动画中), 4=GrabFrozen。
+pub fn PointerLock::last_grab_status(self : PointerLock) -> Int {
+  self.last_status
 }
 
 ///|

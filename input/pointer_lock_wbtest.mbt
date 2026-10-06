@@ -4,7 +4,7 @@
 
 ///| 直构实例:dpy/win 置 0(纯函数路径不触 X)。
 fn pl_fixture(w : Int, h : Int) -> PointerLock {
-  { dpy: 0UL, win: 0UL, cx: w / 2, cy: h / 2, locked: false }
+  { dpy: 0UL, win: 0UL, cx: w / 2, cy: h / 2, locked: false, last_status: -1 }
 }
 
 ///|
